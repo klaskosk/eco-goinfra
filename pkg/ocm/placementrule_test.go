@@ -288,6 +288,82 @@ func TestPlacementRuleUpdate(t *testing.T) {
 	}
 }
 
+func TestPlacementRuleValidate(t *testing.T) {
+	testCases := []struct {
+		builderNil      bool
+		definitionNil   bool
+		apiClientNil    bool
+		builderErrorMsg string
+		expectedError   error
+	}{
+		{
+			builderNil:      false,
+			definitionNil:   false,
+			apiClientNil:    false,
+			builderErrorMsg: "",
+			expectedError:   nil,
+		},
+		{
+			builderNil:      true,
+			definitionNil:   false,
+			apiClientNil:    false,
+			builderErrorMsg: "",
+			expectedError:   fmt.Errorf("error: received nil placementRule builder"),
+		},
+		{
+			builderNil:      false,
+			definitionNil:   true,
+			apiClientNil:    false,
+			builderErrorMsg: "",
+			expectedError:   fmt.Errorf("can not redefine the undefined placementRule"),
+		},
+		{
+			builderNil:      false,
+			definitionNil:   false,
+			apiClientNil:    true,
+			builderErrorMsg: "",
+			expectedError:   fmt.Errorf("placementRule builder cannot have nil apiClient"),
+		},
+		{
+			builderNil:      false,
+			definitionNil:   false,
+			apiClientNil:    false,
+			builderErrorMsg: "test error",
+			expectedError:   fmt.Errorf("test error"),
+		},
+	}
+
+	for _, testCase := range testCases {
+		placementRuleBuilder := buildValidPlacementRuleTestBuilder(clients.GetTestClients(clients.TestClientParams{}))
+
+		if testCase.builderNil {
+			placementRuleBuilder = nil
+		}
+
+		if testCase.definitionNil {
+			placementRuleBuilder.Definition = nil
+		}
+
+		if testCase.apiClientNil {
+			placementRuleBuilder.apiClient = nil
+		}
+
+		if testCase.builderErrorMsg != "" {
+			placementRuleBuilder.errorMsg = testCase.builderErrorMsg
+		}
+
+		valid, err := placementRuleBuilder.validate()
+
+		if testCase.expectedError != nil {
+			assert.False(t, valid)
+			assert.Equal(t, testCase.expectedError, err)
+		} else {
+			assert.True(t, valid)
+			assert.Nil(t, err)
+		}
+	}
+}
+
 // buildDummyPlacementRule returns a PlacementRule with the provided name and namespace.
 func buildDummyPlacementRule(name, nsname string) *placementrulev1.PlacementRule {
 	return &placementrulev1.PlacementRule{

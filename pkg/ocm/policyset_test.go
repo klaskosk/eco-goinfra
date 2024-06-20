@@ -328,6 +328,82 @@ func TestPolicySetWithPolicy(t *testing.T) {
 	}
 }
 
+func TestPolicySetValidate(t *testing.T) {
+	testCases := []struct {
+		builderNil      bool
+		definitionNil   bool
+		apiClientNil    bool
+		builderErrorMsg string
+		expectedError   error
+	}{
+		{
+			builderNil:      false,
+			definitionNil:   false,
+			apiClientNil:    false,
+			builderErrorMsg: "",
+			expectedError:   nil,
+		},
+		{
+			builderNil:      true,
+			definitionNil:   false,
+			apiClientNil:    false,
+			builderErrorMsg: "",
+			expectedError:   fmt.Errorf("error: received nil policySet builder"),
+		},
+		{
+			builderNil:      false,
+			definitionNil:   true,
+			apiClientNil:    false,
+			builderErrorMsg: "",
+			expectedError:   fmt.Errorf("can not redefine the undefined policySet"),
+		},
+		{
+			builderNil:      false,
+			definitionNil:   false,
+			apiClientNil:    true,
+			builderErrorMsg: "",
+			expectedError:   fmt.Errorf("policySet builder cannot have nil apiClient"),
+		},
+		{
+			builderNil:      false,
+			definitionNil:   false,
+			apiClientNil:    false,
+			builderErrorMsg: "test error",
+			expectedError:   fmt.Errorf("test error"),
+		},
+	}
+
+	for _, testCase := range testCases {
+		policySetBuilder := buildValidPolicySetTestBuilder(clients.GetTestClients(clients.TestClientParams{}))
+
+		if testCase.builderNil {
+			policySetBuilder = nil
+		}
+
+		if testCase.definitionNil {
+			policySetBuilder.Definition = nil
+		}
+
+		if testCase.apiClientNil {
+			policySetBuilder.apiClient = nil
+		}
+
+		if testCase.builderErrorMsg != "" {
+			policySetBuilder.errorMsg = testCase.builderErrorMsg
+		}
+
+		valid, err := policySetBuilder.validate()
+
+		if testCase.expectedError != nil {
+			assert.False(t, valid)
+			assert.Equal(t, testCase.expectedError, err)
+		} else {
+			assert.True(t, valid)
+			assert.Nil(t, err)
+		}
+	}
+}
+
 // buildDummyPolicySet returns a PolicySet with the provided name and namespace.
 func buildDummyPolicySet(name, nsname string) *policiesv1beta1.PolicySet {
 	return &policiesv1beta1.PolicySet{

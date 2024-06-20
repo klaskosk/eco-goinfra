@@ -430,6 +430,82 @@ func TestValidateSubject(t *testing.T) {
 	}
 }
 
+func TestPlacementBindingValidate(t *testing.T) {
+	testCases := []struct {
+		builderNil      bool
+		definitionNil   bool
+		apiClientNil    bool
+		builderErrorMsg string
+		expectedError   error
+	}{
+		{
+			builderNil:      false,
+			definitionNil:   false,
+			apiClientNil:    false,
+			builderErrorMsg: "",
+			expectedError:   nil,
+		},
+		{
+			builderNil:      true,
+			definitionNil:   false,
+			apiClientNil:    false,
+			builderErrorMsg: "",
+			expectedError:   fmt.Errorf("error: received nil PlacementBinding builder"),
+		},
+		{
+			builderNil:      false,
+			definitionNil:   true,
+			apiClientNil:    false,
+			builderErrorMsg: "",
+			expectedError:   fmt.Errorf("can not redefine the undefined PlacementBinding"),
+		},
+		{
+			builderNil:      false,
+			definitionNil:   false,
+			apiClientNil:    true,
+			builderErrorMsg: "",
+			expectedError:   fmt.Errorf("PlacementBinding builder cannot have nil apiClient"),
+		},
+		{
+			builderNil:      false,
+			definitionNil:   false,
+			apiClientNil:    false,
+			builderErrorMsg: "test error",
+			expectedError:   fmt.Errorf("test error"),
+		},
+	}
+
+	for _, testCase := range testCases {
+		placementBindingBuilder := buildValidPlacementBindingTestBuilder(clients.GetTestClients(clients.TestClientParams{}))
+
+		if testCase.builderNil {
+			placementBindingBuilder = nil
+		}
+
+		if testCase.definitionNil {
+			placementBindingBuilder.Definition = nil
+		}
+
+		if testCase.apiClientNil {
+			placementBindingBuilder.apiClient = nil
+		}
+
+		if testCase.builderErrorMsg != "" {
+			placementBindingBuilder.errorMsg = testCase.builderErrorMsg
+		}
+
+		valid, err := placementBindingBuilder.validate()
+
+		if testCase.expectedError != nil {
+			assert.False(t, valid)
+			assert.Equal(t, testCase.expectedError, err)
+		} else {
+			assert.True(t, valid)
+			assert.Nil(t, err)
+		}
+	}
+}
+
 // buildDummyPlacementBinding returns a PlacementBinding with the provided name and namespace.
 func buildDummyPlacementBinding(name, nsname string) *policiesv1.PlacementBinding {
 	return &policiesv1.PlacementBinding{

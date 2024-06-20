@@ -398,6 +398,82 @@ func TestPolicyWaitUntilComplianceState(t *testing.T) {
 	}
 }
 
+func TestPolicyValidate(t *testing.T) {
+	testCases := []struct {
+		builderNil      bool
+		definitionNil   bool
+		apiClientNil    bool
+		builderErrorMsg string
+		expectedError   error
+	}{
+		{
+			builderNil:      false,
+			definitionNil:   false,
+			apiClientNil:    false,
+			builderErrorMsg: "",
+			expectedError:   nil,
+		},
+		{
+			builderNil:      true,
+			definitionNil:   false,
+			apiClientNil:    false,
+			builderErrorMsg: "",
+			expectedError:   fmt.Errorf("error: received nil policy builder"),
+		},
+		{
+			builderNil:      false,
+			definitionNil:   true,
+			apiClientNil:    false,
+			builderErrorMsg: "",
+			expectedError:   fmt.Errorf("can not redefine the undefined policy"),
+		},
+		{
+			builderNil:      false,
+			definitionNil:   false,
+			apiClientNil:    true,
+			builderErrorMsg: "",
+			expectedError:   fmt.Errorf("policy builder cannot have nil apiClient"),
+		},
+		{
+			builderNil:      false,
+			definitionNil:   false,
+			apiClientNil:    false,
+			builderErrorMsg: "test error",
+			expectedError:   fmt.Errorf("test error"),
+		},
+	}
+
+	for _, testCase := range testCases {
+		policyBuilder := buildValidPolicyTestBuilder(clients.GetTestClients(clients.TestClientParams{}))
+
+		if testCase.builderNil {
+			policyBuilder = nil
+		}
+
+		if testCase.definitionNil {
+			policyBuilder.Definition = nil
+		}
+
+		if testCase.apiClientNil {
+			policyBuilder.apiClient = nil
+		}
+
+		if testCase.builderErrorMsg != "" {
+			policyBuilder.errorMsg = testCase.builderErrorMsg
+		}
+
+		valid, err := policyBuilder.validate()
+
+		if testCase.expectedError != nil {
+			assert.False(t, valid)
+			assert.Equal(t, testCase.expectedError, err)
+		} else {
+			assert.True(t, valid)
+			assert.Nil(t, err)
+		}
+	}
+}
+
 // buildDummyPolicy returns a Policy with the provided name and namespace.
 func buildDummyPolicy(name, nsname string) *policiesv1.Policy {
 	return &policiesv1.Policy{
