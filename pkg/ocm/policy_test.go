@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	defaultPolicyName   = "policy-test"
-	defaultPolicyNsName = "test-ns"
+	defaultPolicyName          = "policy-test"
+	defaultPolicyNsName        = "test-ns"
+	defaultPolicyMessage       = "wrong type for value; expected string; got int"
+	defaultPolicyMessageSubstr = "wrong type for value"
 )
 
 var policyTestSchemes = []clients.SchemeAttacher{
@@ -446,6 +448,85 @@ func TestPolicyWaitUntilComplianceState(t *testing.T) {
 		err := policyBuilder.WaitUntilComplianceState(testCase.state, 5*time.Second)
 
 		assert.Nil(t, err)
+	}
+}
+
+func TestPolicyWaitForMessageToContain(t *testing.T) {
+	testCases := []struct {
+		substr        string
+		valid         bool
+		exists        bool
+		hasMessage    bool
+		expectedError error
+	}{
+		{
+			substr:        defaultPolicyMessageSubstr,
+			valid:         true,
+			exists:        true,
+			hasMessage:    true,
+			expectedError: nil,
+		},
+		{
+			substr:        "",
+			valid:         true,
+			exists:        true,
+			hasMessage:    true,
+			expectedError: fmt.Errorf("policy message substr is empty"),
+		},
+		{
+			substr:        defaultPolicyMessageSubstr,
+			valid:         false,
+			exists:        true,
+			hasMessage:    true,
+			expectedError: fmt.Errorf("policy 'nsname' cannot be empty"),
+		},
+		{
+			substr:        defaultPolicyMessageSubstr,
+			valid:         true,
+			exists:        false,
+			hasMessage:    true,
+			expectedError: fmt.Errorf("policy object %s does not exist in namespace %s", defaultPolicyName, defaultPolicyNsName),
+		},
+		{
+			substr:        defaultPolicyMessageSubstr,
+			valid:         true,
+			exists:        true,
+			hasMessage:    false,
+			expectedError: context.DeadlineExceeded,
+		},
+	}
+
+	for _, testCase := range testCases {
+		var (
+			runtimeObjects []runtime.Object
+			policyBuilder  *PolicyBuilder
+		)
+
+		if testCase.exists {
+			policy := buildDummyPolicy(defaultPolicyName, defaultPolicyNsName)
+
+			if testCase.hasMessage {
+				policy.Status.Details = []*policiesv1.DetailsPerTemplate{
+					{History: []policiesv1.ComplianceHistory{{Message: defaultPolicyMessage}}},
+				}
+			}
+
+			runtimeObjects = append(runtimeObjects, policy)
+		}
+
+		testSettings := clients.GetTestClients(clients.TestClientParams{
+			K8sMockObjects:  runtimeObjects,
+			SchemeAttachers: policyTestSchemes,
+		})
+
+		if testCase.valid {
+			policyBuilder = buildValidPolicyTestBuilder(testSettings)
+		} else {
+			policyBuilder = buildInvalidPolicyTestBuilder(testSettings)
+		}
+
+		_, err := policyBuilder.WaitForMessageToContain(testCase.substr, time.Second)
+		assert.Equal(t, testCase.expectedError, err)
 	}
 }
 
