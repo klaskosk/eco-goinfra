@@ -41,3 +41,11 @@ jobs:
             - sync update external libs
           branch: sync
           delete-branch: true
+
+  run-makefile:
+    needs: sync-libs
+    uses: ./.github/workflows/makefile.yml
+
+  run-eco-gotests-integration:
+    needs: sync-libs
+    uses: ./.github/workflows/eco-gotests-integration.yml
