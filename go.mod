@@ -205,6 +205,8 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 )
 
+require github.com/openshift-kni/oran-o2ims/api/hardwaremanagement v0.0.0-20250117215357-6ad6c09fc751
+
 require (
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/r3labs/diff/v3 v3.0.1 // indirect
