@@ -11,6 +11,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	toolscache "k8s.io/client-go/tools/cache"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 )
 
 // List returns pod inventory in the given namespace.
@@ -207,6 +209,82 @@ func WaitForAllPodsInNamespaceRunning(
 	}
 
 	return true, nil
+}
+
+func WatchForPodsInNamespaceRunning(apiClient *clients.Settings, nsname string, timeout time.Duration) error {
+	if apiClient == nil {
+		glog.V(100).Infof("The apiClient is empty")
+
+		return fmt.Errorf("podList 'apiClient' cannot be empty")
+	}
+
+	if nsname == "" {
+		glog.V(100).Infof("'nsname' parameter can not be empty")
+
+		return fmt.Errorf("failed to list pods, 'nsname' parameter is empty")
+	}
+
+	informers, err := cache.New(apiClient.Config, cache.Options{
+		Scheme:            apiClient.KGetScheme(),
+		DefaultNamespaces: map[string]cache.Config{nsname: cache.Config{}},
+	})
+	if err != nil {
+		return err
+	}
+
+	podInformer, err := informers.GetInformer(context.TODO(), &corev1.Pod{})
+	if err != nil {
+		return err
+	}
+
+	doneChan := make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.TODO(), timeout)
+
+	defer cancel()
+
+	checkFunc := func(any) {
+		fmt.Println("running check func!")
+		podList := &corev1.PodList{}
+		err := informers.List(ctx, podList)
+
+		if err != nil {
+			return
+		}
+
+		for _, pod := range podList.Items {
+			if pod.Status.Phase != corev1.PodRunning {
+				return
+			}
+		}
+
+		select {
+		case <-doneChan:
+		default:
+			close(doneChan)
+		}
+	}
+
+	_, err = podInformer.AddEventHandler(toolscache.ResourceEventHandlerDetailedFuncs{
+		AddFunc: func(obj interface{}, isInInitialList bool) {
+			if !isInInitialList {
+				checkFunc(nil)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) { checkFunc(nil) },
+		DeleteFunc: checkFunc,
+	})
+	if err != nil {
+		return err
+	}
+
+	go informers.Start(ctx)
+
+	select {
+	case <-doneChan:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // WaitForPodsInNamespacesHealthy waits up to timeout until every pod in namespaces is healthy. Failed pods with

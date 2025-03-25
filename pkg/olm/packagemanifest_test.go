@@ -183,6 +183,7 @@ func TestPullPackageManifestByCatalog(t *testing.T) {
 
 			testSettings.Client = builder.WithIndex(
 				&operatorsv1.PackageManifest{}, "metadata.name", nameMetadataIndexer).Build()
+			testSettings.WithWatch = testSettings.Client
 		}
 
 		builderResult, err := PullPackageManifestByCatalog(

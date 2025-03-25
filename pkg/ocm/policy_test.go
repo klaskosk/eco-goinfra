@@ -451,6 +451,27 @@ func TestPolicyWaitUntilComplianceState(t *testing.T) {
 	}
 }
 
+func TestWaitUntilComplianceStateChangesTo(t *testing.T) {
+	dummyPolicy := buildDummyPolicy(defaultPolicyName, defaultPolicyNsName)
+	dummyPolicy.Status.ComplianceState = policiesv1.NonCompliant
+
+	testSettings := clients.GetTestClients(clients.TestClientParams{
+		K8sMockObjects:  []runtime.Object{dummyPolicy},
+		SchemeAttachers: policyTestSchemes,
+	})
+
+	policyBuilder := buildValidPolicyTestBuilder(testSettings)
+	handle, err := policyBuilder.WaitUntilComplianceStateChangesTo(policiesv1.Compliant, time.Second)
+	assert.Nil(t, err)
+
+	policyBuilder.Definition.Status.ComplianceState = policiesv1.Compliant
+	_, err = policyBuilder.Update(true)
+	assert.Nil(t, err)
+
+	err = handle.Wait()
+	assert.Nil(t, err)
+}
+
 func TestPolicyWaitForStatusMessageToContain(t *testing.T) {
 	testCases := []struct {
 		expectedMessage string

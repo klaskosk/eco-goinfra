@@ -56,7 +56,9 @@ type Settings struct {
 	appsV1Client.AppsV1Interface
 	rbacV1Client.RbacV1Interface
 	Config *rest.Config
-	runtimeClient.Client
+	runtimeClient.WithWatch
+	// for backwards compatibility
+	Client runtimeClient.WithWatch
 	v1security.SecurityV1Interface
 	dynamic.Interface
 	operatorv1alpha1.OperatorV1alpha1Interface
@@ -64,6 +66,10 @@ type Settings struct {
 	storageV1Client.StorageV1Interface
 	policyv1clientTyped.PolicyV1Interface
 	scheme *runtime.Scheme
+}
+
+func (s *Settings) KGetScheme() *runtime.Scheme {
+	return s.scheme
 }
 
 // SchemeAttacher represents a function that can modify the clients current schemes.
@@ -120,9 +126,10 @@ func New(kubeconfig string) *Settings {
 		return nil
 	}
 
-	clientSet.Client, err = runtimeClient.New(config, runtimeClient.Options{
+	clientSet.Client, err = runtimeClient.NewWithWatch(config, runtimeClient.Options{
 		Scheme: clientSet.scheme,
 	})
+	clientSet.WithWatch = clientSet.Client
 
 	if err != nil {
 		glog.V(100).Info("Error to create apiClient")
@@ -212,6 +219,7 @@ type TestClientParams struct {
 func GetTestClients(tcp TestClientParams) *Settings {
 	clientSet, testBuilder := GetModifiableTestClients(tcp)
 	clientSet.Client = testBuilder.Build()
+	clientSet.WithWatch = clientSet.Client
 
 	return clientSet
 }

@@ -9,9 +9,11 @@ import (
 	"github.com/golang/glog"
 	"github.com/openshift-kni/eco-goinfra/pkg/clients"
 	"github.com/openshift-kni/eco-goinfra/pkg/msg"
+	"github.com/openshift-kni/eco-goinfra/pkg/watch"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	apiwatch "k8s.io/apimachinery/pkg/watch"
 	policiesv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -24,7 +26,7 @@ type PolicyBuilder struct {
 	// created policy object.
 	Object *policiesv1.Policy
 	// api client to interact with the cluster.
-	apiClient runtimeclient.Client
+	apiClient runtimeclient.WithWatch
 	// used to store latest error message upon defining or mutating application definition.
 	errorMsg string
 }
@@ -50,7 +52,7 @@ func NewPolicyBuilder(
 	}
 
 	builder := &PolicyBuilder{
-		apiClient: apiClient.Client,
+		apiClient: apiClient.WithWatch,
 		Definition: &policiesv1.Policy{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
@@ -369,6 +371,57 @@ func (builder *PolicyBuilder) WaitUntilComplianceState(state policiesv1.Complian
 
 			return updatedPolicy.Status.ComplianceState == state, nil
 		})
+}
+
+// WaitUntilComplianceStateChangesTo waits up to timeout until this policy changes to the provided compliance state.
+// Unlike WaitUntilComplianceState, this function requires that the compliance state change, not just match the desired
+// state. The returned Handle can be used to await the result since this function is non-blocking.
+func (builder *PolicyBuilder) WaitUntilComplianceStateChangesTo(
+	state policiesv1.ComplianceState, timeout time.Duration) (*watch.Handle, error) {
+	if valid, err := builder.validate(); !valid {
+		return nil, err
+	}
+
+	glog.V(100).Infof(
+		"Waiting up to %s until policy %s in namespace %s changes to compliance state %v",
+		timeout, builder.Definition.Name, builder.Definition.Namespace, state)
+
+	// We use Exists so that builder.Object is non-nil and has the latest possible ResourceVersion.
+	if !builder.Exists() {
+		return nil, fmt.Errorf("cannot wait on non-existent policy %s in namespace %s",
+			builder.Definition.Name, builder.Definition.Namespace)
+	}
+
+	watcher, err := watch.RetryFromRuntimeClient[policiesv1.PolicyList](builder.apiClient, builder.Object)
+	if err != nil {
+		glog.V(100).Infof("Failed to create watcher for Policy %s in namespace %s",
+			builder.Definition.Name, builder.Definition.Namespace)
+
+		return nil, err
+	}
+
+	lastState := builder.Object.Status.ComplianceState
+	handle := watch.NewHandleWithTimeout(
+		context.TODO(), watcher, timeout, func(ctx context.Context, event apiwatch.Event) (bool, error) {
+			if event.Type != apiwatch.Modified {
+				return false, nil
+			}
+
+			newPolicy, ok := event.Object.(*policiesv1.Policy)
+			if !ok {
+				return false, fmt.Errorf("expected policy, received object of type %T", event.Object)
+			}
+
+			if newPolicy.Status.ComplianceState == state && newPolicy.Status.ComplianceState != lastState {
+				return true, nil
+			}
+
+			lastState = newPolicy.Status.ComplianceState
+
+			return false, nil
+		})
+
+	return handle, nil
 }
 
 // WaitForStatusMessageToContain waits up to the specified timeout for the policy message to contain the

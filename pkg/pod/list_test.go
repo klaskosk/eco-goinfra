@@ -13,6 +13,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+func TestWatchForPodsInNamespaceRunning(t *testing.T) {
+	testSettings := clients.GetTestClients(clients.TestClientParams{
+		K8sMockObjects: []runtime.Object{
+			buildDummyPodWithPhaseAndCondition(corev1.PodRunning, corev1.PodInitialized, false),
+		},
+	})
+
+	err := WatchForPodsInNamespaceRunning(testSettings, defaultPodNsName, time.Second)
+	assert.Nil(t, err)
+}
+
 func TestWaitForPodsInNamespacesHealthy(t *testing.T) {
 	testCases := []struct {
 		namespaces    []string
