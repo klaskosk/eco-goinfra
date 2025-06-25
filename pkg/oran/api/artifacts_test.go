@@ -73,7 +73,7 @@ func TestArtifactsListManagedInfrastructureTemplates(t *testing.T) {
 		{
 			name:          "server error 500",
 			filter:        nil,
-			handler:       problemDetailsHandler(dummyProblemDetails, http.StatusInternalServerError),
+			handler:       problemDetailsHandler(dummyProblemDetails),
 			expectedError: "failed to list ManagedInfrastructureTemplates: received error from api:",
 		},
 	}
@@ -120,7 +120,7 @@ func TestArtifactsGetManagedInfrastructureTemplate(t *testing.T) {
 		{
 			name:          "server error 500",
 			templateID:    testTemplateID,
-			handler:       problemDetailsHandler(dummyProblemDetails, http.StatusInternalServerError),
+			handler:       problemDetailsHandler(dummyProblemDetails),
 			expectedError: "failed to get ManagedInfrastructureTemplate: received error from api:",
 		},
 	}
@@ -175,7 +175,7 @@ func TestArtifactsGetManagedInfrastructureTemplateDefaults(t *testing.T) {
 		{
 			name:          "server error 500",
 			templateID:    testTemplateID,
-			handler:       problemDetailsHandler(dummyProblemDetails, http.StatusInternalServerError),
+			handler:       problemDetailsHandler(dummyProblemDetails),
 			expectedError: "failed to get ManagedInfrastructureTemplateDefaults: received error from api:",
 		},
 	}
@@ -258,8 +258,6 @@ func TestArtifactsNetworkError(t *testing.T) {
 }
 
 // successHandler returns an http.HandlerFunc that serves a successful response with the given data and status code.
-//
-//nolint:unparam // The status code will be used by other APIs.
 func successHandler(data any, statusCode int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -269,10 +267,10 @@ func successHandler(data any, statusCode int) http.HandlerFunc {
 }
 
 // problemDetailsHandler returns an http.HandlerFunc that serves a ProblemDetails error.
-func problemDetailsHandler(problemDetails common.ProblemDetails, statusCode int) http.HandlerFunc {
+func problemDetailsHandler(problemDetails common.ProblemDetails) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/problem+json")
-		w.WriteHeader(statusCode)
+		w.WriteHeader(problemDetails.Status)
 		_ = json.NewEncoder(w).Encode(problemDetails)
 	}
 }
