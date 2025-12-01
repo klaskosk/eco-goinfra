@@ -580,5 +580,17 @@ func List[O, L, B any, SO objectPointer[O], SL listPointer[L], SB builderPointer
 // isInterfaceNil checks if the interface is nil. It checks both equality against nil and the reflect.Value.IsNil
 // method. This ensures that neither the interface nor its concrete value are nil.
 func isInterfaceNil(v any) bool {
-	return v == nil || reflect.ValueOf(v).IsNil()
+	if v == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(v)
+
+	//nolint:exhaustive // we only care about types that will not cause panics
+	switch value.Kind() {
+	case reflect.Ptr, reflect.Interface, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func:
+		return value.IsNil()
+	default:
+		return false
+	}
 }

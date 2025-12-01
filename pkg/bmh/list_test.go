@@ -15,44 +15,47 @@ import (
 
 func TestBareMetalHostList(t *testing.T) {
 	testCases := []struct {
-		BareMetalHosts []*BmhBuilder
-		nsName         string
-		listOptions    []goclient.ListOptions
-		expectedError  error
-		client         bool
+		BareMetalHosts   []*BmhBuilder
+		nsName           string
+		listOptions      []goclient.ListOption
+		expectedErrorMsg string
+		client           bool
 	}{
 		{
 
-			BareMetalHosts: []*BmhBuilder{buildValidBmHostBuilder(buildBareMetalHostTestClientWithDummyObject())},
-			nsName:         "test-namespace",
-			expectedError:  nil,
-			client:         true,
+			BareMetalHosts:   []*BmhBuilder{buildValidBmHostBuilder(buildBareMetalHostTestClientWithDummyObject())},
+			nsName:           "test-namespace",
+			expectedErrorMsg: "",
+			client:           true,
 		},
 		{
-			BareMetalHosts: []*BmhBuilder{buildValidBmHostBuilder(buildBareMetalHostTestClientWithDummyObject())},
-			nsName:         "",
-			expectedError:  fmt.Errorf("failed to list bareMetalHosts, 'nsname' parameter is empty"),
-			client:         true,
+			BareMetalHosts:   []*BmhBuilder{buildValidBmHostBuilder(buildBareMetalHostTestClientWithDummyObject())},
+			nsName:           "",
+			expectedErrorMsg: "nsname",
+			client:           true,
 		},
 		{
-			BareMetalHosts: []*BmhBuilder{buildValidBmHostBuilder(buildBareMetalHostTestClientWithDummyObject())},
-			nsName:         "test-namespace",
-			listOptions:    []goclient.ListOptions{{LabelSelector: labels.NewSelector()}},
-			client:         true,
-			expectedError:  nil,
-		},
-		{
-			BareMetalHosts: []*BmhBuilder{buildValidBmHostBuilder(buildBareMetalHostTestClientWithDummyObject())},
-			nsName:         "test-namespace",
-			listOptions:    []goclient.ListOptions{{LabelSelector: labels.NewSelector()}, {LabelSelector: labels.NewSelector()}},
-			expectedError:  fmt.Errorf("error: more than one ListOptions was passed"),
-			client:         true,
+			BareMetalHosts:   []*BmhBuilder{buildValidBmHostBuilder(buildBareMetalHostTestClientWithDummyObject())},
+			nsName:           "test-namespace",
+			listOptions:      []goclient.ListOption{goclient.MatchingLabelsSelector{Selector: labels.NewSelector()}},
+			client:           true,
+			expectedErrorMsg: "",
 		},
 		{
 			BareMetalHosts: []*BmhBuilder{buildValidBmHostBuilder(buildBareMetalHostTestClientWithDummyObject())},
 			nsName:         "test-namespace",
-			expectedError:  fmt.Errorf("failed to list bareMetalHosts, 'apiClient' parameter is empty"),
-			client:         false,
+			listOptions: []goclient.ListOption{
+				goclient.MatchingLabelsSelector{Selector: labels.NewSelector()},
+				goclient.MatchingLabelsSelector{Selector: labels.NewSelector()},
+			},
+			expectedErrorMsg: "more than one ListOptions",
+			client:           true,
+		},
+		{
+			BareMetalHosts:   []*BmhBuilder{buildValidBmHostBuilder(buildBareMetalHostTestClientWithDummyObject())},
+			nsName:           "test-namespace",
+			expectedErrorMsg: "apiClient",
+			client:           false,
 		},
 	}
 	for _, testCase := range testCases {
@@ -66,10 +69,16 @@ func TestBareMetalHostList(t *testing.T) {
 		}
 
 		bmhBuilders, err := List(testSettings, testCase.nsName, testCase.listOptions...)
-		assert.Equal(t, testCase.expectedError, err)
 
-		if testCase.expectedError == nil && len(testCase.listOptions) == 0 {
-			assert.Equal(t, len(testCase.BareMetalHosts), len(bmhBuilders))
+		if testCase.expectedErrorMsg == "" {
+			assert.Nil(t, err)
+
+			if len(testCase.listOptions) == 0 {
+				assert.Equal(t, len(testCase.BareMetalHosts), len(bmhBuilders))
+			}
+		} else {
+			assert.NotNil(t, err)
+			assert.Contains(t, err.Error(), testCase.expectedErrorMsg)
 		}
 	}
 }
@@ -77,7 +86,7 @@ func TestBareMetalHostList(t *testing.T) {
 func TestBareMetalHostListInAllNamespaces(t *testing.T) {
 	testCases := []struct {
 		bareMetalHosts []*BmhBuilder
-		listOptions    []goclient.ListOptions
+		listOptions    []goclient.ListOption
 		expectedError  error
 		client         bool
 	}{
@@ -89,19 +98,22 @@ func TestBareMetalHostListInAllNamespaces(t *testing.T) {
 		},
 		{
 			bareMetalHosts: []*BmhBuilder{buildValidBmHostBuilder(buildBareMetalHostTestClientWithDummyObject())},
-			listOptions:    []goclient.ListOptions{{LabelSelector: labels.NewSelector()}},
+			listOptions:    []goclient.ListOption{goclient.MatchingLabelsSelector{Selector: labels.NewSelector()}},
 			expectedError:  nil,
 			client:         true,
 		},
 		{
 			bareMetalHosts: []*BmhBuilder{buildValidBmHostBuilder(buildBareMetalHostTestClientWithDummyObject())},
-			listOptions:    []goclient.ListOptions{{LabelSelector: labels.NewSelector()}, {LabelSelector: labels.NewSelector()}},
-			expectedError:  fmt.Errorf("error: more than one ListOptions was passed"),
-			client:         true,
+			listOptions: []goclient.ListOption{
+				goclient.MatchingLabelsSelector{Selector: labels.NewSelector()},
+				goclient.MatchingLabelsSelector{Selector: labels.NewSelector()},
+			},
+			expectedError: fmt.Errorf("error: more than one ListOptions was passed"),
+			client:        true,
 		},
 		{
 			bareMetalHosts: []*BmhBuilder{buildValidBmHostBuilder(buildBareMetalHostTestClientWithDummyObject())},
-			listOptions:    []goclient.ListOptions{{LabelSelector: labels.NewSelector()}},
+			listOptions:    []goclient.ListOption{goclient.MatchingLabelsSelector{Selector: labels.NewSelector()}},
 			expectedError:  fmt.Errorf("failed to list bareMetalHosts, 'apiClient' parameter is empty"),
 			client:         false,
 		},
@@ -127,7 +139,7 @@ func TestBareMetalWaitForAllBareMetalHostsInGoodOperationalState(t *testing.T) {
 	testCases := []struct {
 		BareMetalHosts   []*BmhBuilder
 		nsName           string
-		listOptions      []goclient.ListOptions
+		listOptions      []goclient.ListOption
 		operationalState bmhv1alpha1.OperationalStatus
 		expectedError    error
 		client           bool
@@ -175,7 +187,7 @@ func TestBareMetalWaitForAllBareMetalHostsInGoodOperationalState(t *testing.T) {
 			operationalState: bmhv1alpha1.OperationalStatusOK,
 			expectedError:    nil,
 			expectedStatus:   true,
-			listOptions:      []goclient.ListOptions{{LabelSelector: labels.NewSelector()}},
+			listOptions:      []goclient.ListOption{goclient.MatchingLabelsSelector{Selector: labels.NewSelector()}},
 			client:           true,
 		},
 		{
@@ -184,8 +196,8 @@ func TestBareMetalWaitForAllBareMetalHostsInGoodOperationalState(t *testing.T) {
 			operationalState: bmhv1alpha1.OperationalStatusOK,
 			expectedError:    fmt.Errorf("error: more than one ListOptions was passed"),
 			expectedStatus:   false,
-			listOptions: []goclient.ListOptions{
-				{LabelSelector: labels.NewSelector()}, {LabelSelector: labels.NewSelector()}},
+			listOptions: []goclient.ListOption{
+				goclient.MatchingLabelsSelector{Selector: labels.NewSelector()}, goclient.MatchingLabelsSelector{Selector: labels.NewSelector()}},
 			client: true,
 		},
 	}
