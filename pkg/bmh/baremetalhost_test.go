@@ -7,6 +7,7 @@ import (
 
 	bmhv1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
+	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common/testhelper"
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -24,6 +25,33 @@ var (
 		bmhv1alpha1.AddToScheme,
 	}
 )
+
+func Test_BmhBuilder_Pull(t *testing.T) {
+	t.Parallel()
+
+	testhelper.NewNamespacedPullTestConfig(
+		Pull,
+		bmhv1alpha1.AddToScheme,
+		bmhv1alpha1.GroupVersion.WithKind("BareMetalHost"),
+	).ExecuteTests(t)
+}
+
+func Test_BmhBuilder_Methods(t *testing.T) {
+	t.Parallel()
+
+	commonTestConfig := testhelper.NewCommonTestConfig[bmhv1alpha1.BareMetalHost, BmhBuilder](
+		bmhv1alpha1.AddToScheme,
+		bmhv1alpha1.GroupVersion.WithKind("BareMetalHost"),
+		testhelper.ResourceScopeNamespaced,
+	)
+
+	testhelper.NewTestSuite().
+		With(testhelper.NewGetTestConfig(commonTestConfig)).
+		With(testhelper.NewExistsTestConfig(commonTestConfig)).
+		With(testhelper.NewCreateTestConfig(commonTestConfig)).
+		With(testhelper.NewDeleteReturnerTestConfig(commonTestConfig)).
+		Run(t)
+}
 
 func TestBareMetalHostWithRootDeviceDeviceName(t *testing.T) {
 	testCases := []struct {

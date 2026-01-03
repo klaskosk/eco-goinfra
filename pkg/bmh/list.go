@@ -2,12 +2,13 @@ package bmh
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	bmhv1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common"
+	commonerrors "github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common/errors"
+	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common/key"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -18,29 +19,27 @@ const (
 )
 
 // List returns bareMetalHosts inventory in the given namespace.
-func List(apiClient *clients.Settings, nsname string, options ...runtimeclient.ListOption) ([]*BmhBuilder, error) {
+func List(apiClient *clients.Settings, nsname string, options ...runtimeclient.ListOptions) ([]*BmhBuilder, error) {
 	if nsname == "" {
 		klog.V(100).Info("bareMetalHost 'nsname' parameter can not be empty")
 
-		return nil, fmt.Errorf("failed to list bareMetalHosts, 'nsname' parameter is empty")
+		return nil, commonerrors.NewBuilderFieldEmpty(
+			key.NewResourceKey("BareMetalHost", "", ""), commonerrors.BuilderFieldNamespace)
 	}
 
-	options = append(options, runtimeclient.InNamespace(nsname))
+	convertedOptions := common.ConvertListOptionsToOptions(options)
+	convertedOptions = append(convertedOptions, runtimeclient.InNamespace(nsname))
 
-	return common.List[
-		bmhv1alpha1.BareMetalHost,
-		bmhv1alpha1.BareMetalHostList,
-		BmhBuilder,
-	](context.TODO(), apiClient, bmhv1alpha1.AddToScheme, options...)
+	return common.List[bmhv1alpha1.BareMetalHost, bmhv1alpha1.BareMetalHostList, BmhBuilder](
+		context.TODO(), apiClient, bmhv1alpha1.AddToScheme, convertedOptions...)
 }
 
 // ListInAllNamespaces lists the BareMetalHosts across all namespaces on the provided cluster.
-func ListInAllNamespaces(apiClient *clients.Settings, options ...runtimeclient.ListOption) ([]*BmhBuilder, error) {
-	return common.List[
-		bmhv1alpha1.BareMetalHost,
-		bmhv1alpha1.BareMetalHostList,
-		BmhBuilder,
-	](context.TODO(), apiClient, bmhv1alpha1.AddToScheme, options...)
+func ListInAllNamespaces(apiClient *clients.Settings, options ...runtimeclient.ListOptions) ([]*BmhBuilder, error) {
+	convertedOptions := common.ConvertListOptionsToOptions(options)
+
+	return common.List[bmhv1alpha1.BareMetalHost, bmhv1alpha1.BareMetalHostList, BmhBuilder](
+		context.TODO(), apiClient, bmhv1alpha1.AddToScheme, convertedOptions...)
 }
 
 // WaitForAllBareMetalHostsInGoodOperationalState waits for all baremetalhosts to be in good Operational State
@@ -48,7 +47,7 @@ func ListInAllNamespaces(apiClient *clients.Settings, options ...runtimeclient.L
 func WaitForAllBareMetalHostsInGoodOperationalState(apiClient *clients.Settings,
 	nsname string,
 	timeout time.Duration,
-	options ...runtimeclient.ListOption) (bool, error) {
+	options ...runtimeclient.ListOptions) (bool, error) {
 	klog.V(100).Infof("Waiting for all bareMetalHosts in %s namespace to have OK operationalStatus",
 		nsname)
 

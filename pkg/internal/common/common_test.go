@@ -887,3 +887,43 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertListOptionsToOptions(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name            string
+		options         []runtimeclient.ListOptions
+		expectedOptions []runtimeclient.ListOption
+	}{
+		{
+			name:            "valid conversion",
+			options:         []runtimeclient.ListOptions{{}},
+			expectedOptions: []runtimeclient.ListOption{&runtimeclient.ListOptions{}},
+		},
+		{
+			name:            "nil options",
+			options:         nil,
+			expectedOptions: []runtimeclient.ListOption{},
+		},
+		{
+			name:            "empty options",
+			options:         []runtimeclient.ListOptions{},
+			expectedOptions: []runtimeclient.ListOption{},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			options := ConvertListOptionsToOptions(testCase.options)
+			assert.Equal(t, testCase.expectedOptions, options)
+
+			for i, option := range options {
+				_, ok := option.(*runtimeclient.ListOptions)
+				assert.Truef(t, ok, "option %d is not a runtimeclient.ListOptions", i)
+			}
+		})
+	}
+}
