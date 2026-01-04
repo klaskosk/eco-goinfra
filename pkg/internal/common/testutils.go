@@ -18,6 +18,8 @@ const (
 	defaultName         = "test-resource"
 	defaultNamespace    = "test-namespace"
 	defaultErrorMessage = "test-error-message"
+	testAnnotationKey   = "test-annotation-key"
+	testAnnotationValue = "test-annotation-value"
 )
 
 var (
@@ -32,6 +34,7 @@ var (
 	errCreateFailure  = errors.New("simulated create failure")
 	errListFailure    = errors.New("simulated list failure")
 	errGetFailure     = errors.New("simulated get failure")
+	errOptionFailure  = errors.New("simulated option failure")
 
 	testFailingGet = func(
 		ctx context.Context,
@@ -105,6 +108,28 @@ func isAPICallFailedWithVerb(verb string) func(error) bool {
 
 func isContextDeadlineExceeded(err error) bool {
 	return errors.Is(err, context.DeadlineExceeded)
+}
+
+func isOptionFailure(err error) bool {
+	return errors.Is(err, errOptionFailure)
+}
+
+// testAnnotationOption is an option function that sets a test annotation on the builder.
+func testAnnotationOption(builder *mockClusterScopedBuilder) (*mockClusterScopedBuilder, error) {
+	annotations := builder.GetDefinition().GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+
+	annotations[testAnnotationKey] = testAnnotationValue
+	builder.GetDefinition().SetAnnotations(annotations)
+
+	return builder, nil
+}
+
+// testFailingOption is an option function that always returns an error.
+func testFailingOption(builder *mockClusterScopedBuilder) (*mockClusterScopedBuilder, error) {
+	return builder, errOptionFailure
 }
 
 // buildDummyClusterScopedResource creates a dummy cluster-scoped resource for testing. In this case, it is a Namespace,

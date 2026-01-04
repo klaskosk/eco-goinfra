@@ -1062,3 +1062,82 @@ func TestConvertListOptionsToOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestWithOptions(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name               string
+		builderValid       bool
+		options            []func(*mockClusterScopedBuilder) (*mockClusterScopedBuilder, error)
+		assertError        func(error) bool
+		expectedAnnotation bool
+	}{
+		{
+			name:               "options are applied successfully",
+			builderValid:       true,
+			options:            []func(*mockClusterScopedBuilder) (*mockClusterScopedBuilder, error){testAnnotationOption},
+			assertError:        isErrorNil,
+			expectedAnnotation: true,
+		},
+		{
+			name:               "invalid builder stops processing",
+			builderValid:       false,
+			options:            []func(*mockClusterScopedBuilder) (*mockClusterScopedBuilder, error){testAnnotationOption},
+			assertError:        isInvalidBuilder,
+			expectedAnnotation: false,
+		},
+		{
+			name:               "error in option is captured in builder",
+			builderValid:       true,
+			options:            []func(*mockClusterScopedBuilder) (*mockClusterScopedBuilder, error){testFailingOption},
+			assertError:        isOptionFailure,
+			expectedAnnotation: false,
+		},
+		{
+			name:               "nil options are skipped",
+			builderValid:       true,
+			options:            []func(*mockClusterScopedBuilder) (*mockClusterScopedBuilder, error){nil, testAnnotationOption, nil},
+			assertError:        isErrorNil,
+			expectedAnnotation: true,
+		},
+		{
+			name:               "error stops subsequent options",
+			builderValid:       true,
+			options:            []func(*mockClusterScopedBuilder) (*mockClusterScopedBuilder, error){testFailingOption, testAnnotationOption},
+			assertError:        isOptionFailure,
+			expectedAnnotation: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := clients.GetTestClients(clients.TestClientParams{
+				SchemeAttachers: []clients.SchemeAttacher{testSchemeAttacher},
+			})
+
+			builder := buildValidMockClusterScopedBuilder(client)
+			if !testCase.builderValid {
+				builder = buildInvalidMockClusterScopedBuilder(client)
+			}
+
+			result := WithOptions(builder, testCase.options...)
+
+			assert.NotNil(t, result)
+			assert.Truef(t, testCase.assertError(result.GetError()), "unexpected error, got: %v", result.GetError())
+
+			if testCase.expectedAnnotation {
+				annotations := result.GetDefinition().GetAnnotations()
+				assert.Equal(t, testAnnotationValue, annotations[testAnnotationKey])
+			} else if testCase.builderValid && result.GetError() != nil {
+				annotations := result.GetDefinition().GetAnnotations()
+				if annotations != nil {
+					_, exists := annotations[testAnnotationKey]
+					assert.False(t, exists, "annotation should not be set when option fails")
+				}
+			}
+		})
+	}
+}

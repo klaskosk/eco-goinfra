@@ -668,6 +668,39 @@ func ConvertListOptionsToOptions(options []runtimeclient.ListOptions) []runtimec
 	return listOptions
 }
 
+// WithOptions applies the provided functional options to the builder. If the builder is invalid, it is returned as is.
+// If any option returns an error, the error is set on the builder and the builder is returned immediately without
+// applying subsequent options. Nil options are skipped.
+func WithOptions[O, B any, SO ObjectPointer[O], SB BuilderPointer[B, O, SO]](
+	builder SB, options ...func(SB) (SB, error)) SB {
+	if err := Validate(builder); err != nil {
+		return builder
+	}
+
+	resourceKey := NewResourceKeyFromBuilder(builder)
+
+	klog.V(100).Infof("Applying %d options to %s", len(options), resourceKey.String())
+
+	for _, option := range options {
+		if option == nil {
+			continue
+		}
+
+		var err error
+
+		builder, err = option(builder)
+		if err != nil {
+			klog.V(100).Infof("Error occurred while applying option to %s: %v", resourceKey.String(), err)
+
+			builder.SetError(err)
+
+			return builder
+		}
+	}
+
+	return builder
+}
+
 // isInterfaceNil checks if the interface is nil. It checks both equality against nil and the reflect.Value.IsNil
 // method. This ensures that neither the interface nor its concrete value are nil.
 func isInterfaceNil(v any) bool {

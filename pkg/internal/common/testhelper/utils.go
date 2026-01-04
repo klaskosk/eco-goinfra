@@ -28,6 +28,7 @@ var (
 	errUpdateFailure  = errors.New("simulated update failure")
 	errListFailure    = errors.New("simulated list failure")
 	errInvalidBuilder = errors.New("invalid builder error")
+	errOptionFailure  = errors.New("simulated option failure")
 )
 
 var testFailingCreate = func(
@@ -98,6 +99,10 @@ func isContextDeadlineExceeded(err error) bool {
 	return errors.Is(err, context.DeadlineExceeded)
 }
 
+func isOptionFailure(err error) bool {
+	return errors.Is(err, errOptionFailure)
+}
+
 func buildDummyObject[O any, SO common.ObjectPointer[O]](name, namespace string) SO {
 	var dummyObject SO = new(O)
 
@@ -105,6 +110,28 @@ func buildDummyObject[O any, SO common.ObjectPointer[O]](name, namespace string)
 	dummyObject.SetNamespace(namespace)
 
 	return dummyObject
+}
+
+// testAnnotationOption returns an option function that sets a test annotation on the builder.
+func testAnnotationOption[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]]() func(SB) (SB, error) {
+	return func(builder SB) (SB, error) {
+		annotations := builder.GetDefinition().GetAnnotations()
+		if annotations == nil {
+			annotations = make(map[string]string)
+		}
+
+		annotations[testAnnotationKey] = testAnnotationValue
+		builder.GetDefinition().SetAnnotations(annotations)
+
+		return builder, nil
+	}
+}
+
+// testFailingOption returns an option function that always returns an error.
+func testFailingOption[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]]() func(SB) (SB, error) {
+	return func(builder SB) (SB, error) {
+		return builder, errOptionFailure
+	}
 }
 
 // createSchemeAttacherGVKTest creates a test function that checks if the scheme attacher registers the expected GVK.
