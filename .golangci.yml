@@ -121,6 +121,7 @@ linters:
         - generic
         # Allow returning the controller-runtime Client interface.
         - '.*client\.Client$'
+        - '.*client\.WithWatch$'
     revive:
       rules:
         - name: indent-error-flow

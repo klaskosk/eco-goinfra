@@ -31,6 +31,17 @@ var (
 	errDeleteFailure  = errors.New("simulated delete failure")
 	errCreateFailure  = errors.New("simulated create failure")
 	errListFailure    = errors.New("simulated list failure")
+	errGetFailure     = errors.New("simulated get failure")
+
+	testFailingGet = func(
+		ctx context.Context,
+		client runtimeclient.WithWatch,
+		key runtimeclient.ObjectKey,
+		obj runtimeclient.Object,
+		opts ...runtimeclient.GetOption,
+	) error {
+		return errGetFailure
+	}
 
 	testFailingCreate = func(
 		ctx context.Context,
@@ -92,6 +103,10 @@ func isAPICallFailedWithVerb(verb string) func(error) bool {
 	}
 }
 
+func isContextDeadlineExceeded(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded)
+}
+
 // buildDummyClusterScopedResource creates a dummy cluster-scoped resource for testing. In this case, it is a Namespace,
 // although the specific resource type is intentionally unimportant for the purpose of testing.
 func buildDummyClusterScopedResource() *corev1.Namespace {
@@ -110,7 +125,7 @@ type mockClusterScopedBuilder struct {
 // Compile-time check to ensure mockClusterScopedBuilder implements Builder interface.
 var _ Builder[corev1.Namespace, *corev1.Namespace] = (*mockClusterScopedBuilder)(nil)
 
-func buildValidMockClusterScopedBuilder(client runtimeclient.Client) *mockClusterScopedBuilder {
+func buildValidMockClusterScopedBuilder(client *clients.Settings) *mockClusterScopedBuilder {
 	return &mockClusterScopedBuilder{
 		EmbeddableBuilder: EmbeddableBuilder[corev1.Namespace, *corev1.Namespace]{
 			apiClient:  client,
@@ -121,7 +136,7 @@ func buildValidMockClusterScopedBuilder(client runtimeclient.Client) *mockCluste
 	}
 }
 
-func buildInvalidMockClusterScopedBuilder(client runtimeclient.Client) *mockClusterScopedBuilder {
+func buildInvalidMockClusterScopedBuilder(client *clients.Settings) *mockClusterScopedBuilder {
 	return &mockClusterScopedBuilder{
 		EmbeddableBuilder: EmbeddableBuilder[corev1.Namespace, *corev1.Namespace]{
 			apiClient:  client,

@@ -94,6 +94,10 @@ func isInvalidBuilder(err error) bool {
 	return errors.Is(err, errInvalidBuilder)
 }
 
+func isContextDeadlineExceeded(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded)
+}
+
 func buildDummyObject[O any, SO common.ObjectPointer[O]](name, namespace string) SO {
 	var dummyObject SO = new(O)
 

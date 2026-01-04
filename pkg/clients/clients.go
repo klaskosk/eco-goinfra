@@ -57,13 +57,19 @@ type Settings struct {
 	appsV1Client.AppsV1Interface
 	rbacV1Client.RbacV1Interface
 	Config *rest.Config
-	runtimeClient.Client
 	v1security.SecurityV1Interface
 	dynamic.Interface
 	operatorv1alpha1.OperatorV1alpha1Interface
 	machinev1beta1client.MachineV1beta1Interface
 	storageV1Client.StorageV1Interface
 	policyv1clientTyped.PolicyV1Interface
+
+	// The existing public API requires that client.Settings implements runtimeClient.Client while also having a
+	// field named Client which implements runtimeClient.Client. This can be done with a type alias, but we instead
+	// use two different fields to avoid exporting a new "Client" type from this package.
+	runtimeClient.WithWatch
+	Client runtimeClient.WithWatch
+
 	scheme *runtime.Scheme
 }
 
@@ -121,7 +127,7 @@ func New(kubeconfig string) *Settings {
 		return nil
 	}
 
-	clientSet.Client, err = runtimeClient.New(config, runtimeClient.Options{
+	clientSet.Client, err = runtimeClient.NewWithWatch(config, runtimeClient.Options{
 		Scheme: clientSet.scheme,
 	})
 	if err != nil {
@@ -129,6 +135,8 @@ func New(kubeconfig string) *Settings {
 
 		return nil
 	}
+
+	clientSet.WithWatch = clientSet.Client
 
 	clientSet.KubeconfigPath = kubeconfig
 
@@ -211,6 +219,7 @@ type TestClientParams struct {
 func GetTestClients(tcp TestClientParams) *Settings {
 	clientSet, testBuilder := GetModifiableTestClients(tcp)
 	clientSet.Client = testBuilder.Build()
+	clientSet.WithWatch = clientSet.Client
 
 	return clientSet
 }

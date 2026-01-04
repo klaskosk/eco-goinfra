@@ -4,13 +4,16 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common/errors"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common/key"
+	internalwatch "github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/watch"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/klog/v2"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -52,11 +55,11 @@ type Builder[O any, SO ObjectPointer[O]] interface {
 	SetError(error)
 
 	// GetClient returns the client used for connecting with the K8s cluster.
-	GetClient() runtimeclient.Client
+	GetClient() runtimeclient.WithWatch
 	// SetClient allows for updating the client used to connect to the K8s cluster. Since this is a simple setter,
 	// it will not handle updating the scheme of the client and should generally be avoided outside of creating the
 	// builder.
-	SetClient(runtimeclient.Client)
+	SetClient(runtimeclient.WithWatch)
 
 	// GetGVK returns the GVK for the resource the builder represents, even if the builder is zero-valued.
 	//
@@ -105,7 +108,7 @@ type BuilderPointer[B, O any, SO ObjectPointer[O]] interface {
 // type and uses the methods from the Builder interface to create the actual builder. Generic parameters are ordered so
 // that SO and SB can be elided and only O and B must be provided.
 func NewClusterScopedBuilder[O, B any, SO ObjectPointer[O], SB BuilderPointer[B, O, SO]](
-	apiClient runtimeclient.Client, schemeAttacher clients.SchemeAttacher, name string) SB {
+	apiClient runtimeclient.WithWatch, schemeAttacher clients.SchemeAttacher, name string) SB {
 	var builder SB = new(B)
 
 	if mixinAttacher, ok := any(builder).(MixinAttacher); ok {
@@ -153,7 +156,7 @@ func NewClusterScopedBuilder[O, B any, SO ObjectPointer[O], SB BuilderPointer[B,
 // uses the methods from the Builder interface to create the actual builder. Generic parameters are ordered so that SO
 // and SB can be elided and only O and B must be provided.
 func NewNamespacedBuilder[O, B any, SO ObjectPointer[O], SB BuilderPointer[B, O, SO]](
-	apiClient runtimeclient.Client, schemeAttacher clients.SchemeAttacher, name, nsname string) SB {
+	apiClient runtimeclient.WithWatch, schemeAttacher clients.SchemeAttacher, name, nsname string) SB {
 	var builder SB = new(B)
 
 	if mixinAttacher, ok := any(builder).(MixinAttacher); ok {
@@ -210,7 +213,7 @@ func NewNamespacedBuilder[O, B any, SO ObjectPointer[O], SB BuilderPointer[B, O,
 // It is generic over the actual builder type and uses the methods from the Builder interface to create the actual
 // builder. Generic parameters are ordered so that SO and SB can be elided and only O and B must be provided.
 func PullClusterScopedBuilder[O, B any, SO ObjectPointer[O], SB BuilderPointer[B, O, SO]](
-	ctx context.Context, apiClient runtimeclient.Client, schemeAttacher clients.SchemeAttacher, name string) (SB, error) {
+	ctx context.Context, apiClient runtimeclient.WithWatch, schemeAttacher clients.SchemeAttacher, name string) (SB, error) {
 	var builder SB = new(B)
 
 	if mixinAttacher, ok := any(builder).(MixinAttacher); ok {
@@ -262,7 +265,7 @@ func PullClusterScopedBuilder[O, B any, SO ObjectPointer[O], SB BuilderPointer[B
 // It is generic over the actual builder type and uses the methods from the Builder interface to create the actual
 // builder. Generic parameters are ordered so that SO and SB can be elided and only O and B must be provided.
 func PullNamespacedBuilder[O, B any, SO ObjectPointer[O], SB BuilderPointer[B, O, SO]](
-	ctx context.Context, apiClient runtimeclient.Client, schemeAttacher clients.SchemeAttacher, name, nsname string) (SB, error) {
+	ctx context.Context, apiClient runtimeclient.WithWatch, schemeAttacher clients.SchemeAttacher, name, nsname string) (SB, error) {
 	var builder SB = new(B)
 
 	if mixinAttacher, ok := any(builder).(MixinAttacher); ok {
@@ -383,6 +386,80 @@ func Delete[O any, SO ObjectPointer[O]](ctx context.Context, builder Builder[O, 
 	klog.V(100).Infof("Failed to delete %s: %v", key.String(), err)
 
 	return errors.NewAPICallFailed("delete", key, err)
+}
+
+// WaitUntilDeleted watches the resource until it is deleted or the timeout expires. The list type parameter L must
+// correspond to the object type O.
+func WaitUntilDeleted[O, L any, SO ObjectPointer[O], SL ListPointer[L]](
+	ctx context.Context, builder Builder[O, SO], timeout time.Duration) error {
+	if err := Validate(builder); err != nil {
+		return err
+	}
+
+	resourceKey := NewResourceKeyFromBuilder(builder)
+
+	klog.V(100).Infof("Waiting for %s to be deleted with timeout %v", resourceKey.String(), timeout)
+
+	// Check if the resource is already deleted before starting the watch.
+	currentObject, err := Get(ctx, builder)
+	if k8serrors.IsNotFound(err) {
+		klog.V(100).Infof("%s is already deleted", resourceKey.String())
+
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to get before watching for deletion: %w", err)
+	}
+
+	// Start the watcher from the current resource version to avoid missing any events.
+	watcher, err := internalwatch.NewRetryWatcherFromClient[L, SL](ctx, builder.GetClient(), currentObject)
+	if err != nil {
+		return fmt.Errorf("failed to create watcher for %s: %w", resourceKey.String(), err)
+	}
+
+	err = internalwatch.NewHandleWithTimeout(ctx, watcher, timeout, func(_ context.Context, event watch.Event) (bool, error) {
+		if event.Type == watch.Deleted {
+			klog.V(100).Infof("%s is deleted", resourceKey.String())
+
+			return true, nil
+		}
+
+		klog.V(100).Infof("%s still present (event type: %s)", resourceKey.String(), event.Type)
+
+		return false, nil
+	}).Wait()
+	if err != nil {
+		return fmt.Errorf("failed waiting for %s to be deleted: %w", resourceKey.String(), err)
+	}
+
+	return nil
+}
+
+// DeleteAndWait deletes the resource and waits for it to be fully removed from the cluster. The list type parameter L
+// must correspond to the object type O.
+func DeleteAndWait[O, L any, SO ObjectPointer[O], SL ListPointer[L]](
+	ctx context.Context, builder Builder[O, SO], timeout time.Duration) error {
+	if err := Validate(builder); err != nil {
+		return err
+	}
+
+	resourceKey := NewResourceKeyFromBuilder(builder)
+
+	klog.V(100).Infof("Deleting %s and waiting for it to be removed with timeout %v",
+		resourceKey.String(), timeout)
+
+	err := Delete(ctx, builder)
+	if err != nil {
+		return fmt.Errorf("failed to delete before waiting: %w", err)
+	}
+
+	err = WaitUntilDeleted[O, L, SO, SL](ctx, builder, timeout)
+	if err != nil {
+		return fmt.Errorf("failed to wait for deletion: %w", err)
+	}
+
+	return nil
 }
 
 // Update updates the resource on the cluster using the builder's definition. It immediately tries to update the
@@ -516,7 +593,7 @@ type ListPointer[L any] interface {
 // List lists the resources in the cluster and returns a list of builders for each resource.
 func List[O, L, B any, SO ObjectPointer[O], SL ListPointer[L], SB BuilderPointer[B, O, SO]](
 	ctx context.Context,
-	apiClient runtimeclient.Client,
+	apiClient runtimeclient.WithWatch,
 	schemeAttacher clients.SchemeAttacher,
 	options ...runtimeclient.ListOption) ([]SB, error) {
 	var dummyBuilder SB = new(B)

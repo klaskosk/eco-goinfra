@@ -2,9 +2,10 @@ package common
 
 import (
 	"testing"
+	"time"
 
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
-	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common/errors"
+	commonerrors "github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common/errors"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,21 +36,21 @@ func TestNewClusterScopedBuilder(t *testing.T) {
 			clientNil:      true,
 			builderName:    defaultName,
 			schemeAttacher: testSchemeAttacher,
-			assertError:    errors.IsAPIClientNil,
+			assertError:    commonerrors.IsAPIClientNil,
 		},
 		{
 			name:           "empty name",
 			clientNil:      false,
 			builderName:    "",
 			schemeAttacher: testSchemeAttacher,
-			assertError:    errors.IsBuilderNameEmpty,
+			assertError:    commonerrors.IsBuilderNameEmpty,
 		},
 		{
 			name:           "scheme attachment failure",
 			clientNil:      false,
 			builderName:    defaultName,
 			schemeAttacher: testFailingSchemeAttacher,
-			assertError:    errors.IsSchemeAttacherFailed,
+			assertError:    commonerrors.IsSchemeAttacherFailed,
 		},
 	}
 
@@ -57,7 +58,7 @@ func TestNewClusterScopedBuilder(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			var client runtimeclient.Client
+			var client *clients.Settings
 			if !testCase.clientNil {
 				client = clients.GetTestClients(clients.TestClientParams{})
 			}
@@ -100,7 +101,7 @@ func TestNewNamespacedBuilder(t *testing.T) {
 			builderName:    defaultName,
 			builderNsName:  defaultNamespace,
 			schemeAttacher: testSchemeAttacher,
-			assertError:    errors.IsAPIClientNil,
+			assertError:    commonerrors.IsAPIClientNil,
 		},
 		{
 			name:           "empty name",
@@ -108,7 +109,7 @@ func TestNewNamespacedBuilder(t *testing.T) {
 			builderName:    "",
 			builderNsName:  defaultNamespace,
 			schemeAttacher: testSchemeAttacher,
-			assertError:    errors.IsBuilderNameEmpty,
+			assertError:    commonerrors.IsBuilderNameEmpty,
 		},
 		{
 			name:           "empty namespace",
@@ -116,7 +117,7 @@ func TestNewNamespacedBuilder(t *testing.T) {
 			builderName:    defaultName,
 			builderNsName:  "",
 			schemeAttacher: testSchemeAttacher,
-			assertError:    errors.IsBuilderNamespaceEmpty,
+			assertError:    commonerrors.IsBuilderNamespaceEmpty,
 		},
 		{
 			name:           "scheme attachment failure",
@@ -124,7 +125,7 @@ func TestNewNamespacedBuilder(t *testing.T) {
 			builderName:    defaultName,
 			builderNsName:  defaultNamespace,
 			schemeAttacher: testFailingSchemeAttacher,
-			assertError:    errors.IsSchemeAttacherFailed,
+			assertError:    commonerrors.IsSchemeAttacherFailed,
 		},
 	}
 
@@ -132,7 +133,7 @@ func TestNewNamespacedBuilder(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			var client runtimeclient.Client
+			var client *clients.Settings
 			if !testCase.clientNil {
 				client = clients.GetTestClients(clients.TestClientParams{})
 			}
@@ -176,7 +177,7 @@ func TestPullClusterScopedBuilder(t *testing.T) {
 			builderName:    defaultName,
 			schemeAttacher: testSchemeAttacher,
 			objectExists:   false,
-			assertError:    errors.IsAPIClientNil,
+			assertError:    commonerrors.IsAPIClientNil,
 		},
 		{
 			name:           "empty name",
@@ -184,7 +185,7 @@ func TestPullClusterScopedBuilder(t *testing.T) {
 			builderName:    "",
 			schemeAttacher: testSchemeAttacher,
 			objectExists:   false,
-			assertError:    errors.IsBuilderNameEmpty,
+			assertError:    commonerrors.IsBuilderNameEmpty,
 		},
 		{
 			name:           "scheme attachment failure",
@@ -192,7 +193,7 @@ func TestPullClusterScopedBuilder(t *testing.T) {
 			builderName:    defaultName,
 			schemeAttacher: testFailingSchemeAttacher,
 			objectExists:   false,
-			assertError:    errors.IsSchemeAttacherFailed,
+			assertError:    commonerrors.IsSchemeAttacherFailed,
 		},
 		{
 			name:           "resource does not exist",
@@ -209,7 +210,7 @@ func TestPullClusterScopedBuilder(t *testing.T) {
 			t.Parallel()
 
 			var (
-				client  runtimeclient.Client
+				client  *clients.Settings
 				objects []runtime.Object
 			)
 
@@ -266,7 +267,7 @@ func TestPullNamespacedBuilder(t *testing.T) {
 			builderNsName:  defaultNamespace,
 			schemeAttacher: testSchemeAttacher,
 			objectExists:   false,
-			assertError:    errors.IsAPIClientNil,
+			assertError:    commonerrors.IsAPIClientNil,
 		},
 		{
 			name:           "empty name",
@@ -275,7 +276,7 @@ func TestPullNamespacedBuilder(t *testing.T) {
 			builderNsName:  defaultNamespace,
 			schemeAttacher: testSchemeAttacher,
 			objectExists:   false,
-			assertError:    errors.IsBuilderNameEmpty,
+			assertError:    commonerrors.IsBuilderNameEmpty,
 		},
 		{
 			name:           "empty namespace",
@@ -284,7 +285,7 @@ func TestPullNamespacedBuilder(t *testing.T) {
 			builderNsName:  "",
 			schemeAttacher: testSchemeAttacher,
 			objectExists:   false,
-			assertError:    errors.IsBuilderNamespaceEmpty,
+			assertError:    commonerrors.IsBuilderNamespaceEmpty,
 		},
 		{
 			name:           "scheme attachment failure",
@@ -293,7 +294,7 @@ func TestPullNamespacedBuilder(t *testing.T) {
 			builderNsName:  defaultNamespace,
 			schemeAttacher: testFailingSchemeAttacher,
 			objectExists:   false,
-			assertError:    errors.IsSchemeAttacherFailed,
+			assertError:    commonerrors.IsSchemeAttacherFailed,
 		},
 		{
 			name:           "resource does not exist",
@@ -311,7 +312,7 @@ func TestPullNamespacedBuilder(t *testing.T) {
 			t.Parallel()
 
 			var (
-				client  runtimeclient.Client
+				client  *clients.Settings
 				objects []runtime.Object
 			)
 
@@ -706,6 +707,140 @@ func TestDelete(t *testing.T) {
 	}
 }
 
+func TestWaitUntilDeleted(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name             string
+		builderValid     bool
+		objectExists     bool
+		interceptorFuncs interceptor.Funcs
+		assertError      func(error) bool
+	}{
+		{
+			name:         "resource already deleted",
+			builderValid: true,
+			objectExists: false,
+			assertError:  isErrorNil,
+		},
+		{
+			name:         "invalid builder",
+			builderValid: false,
+			objectExists: false,
+			assertError:  isInvalidBuilder,
+		},
+		{
+			name:         "timeout waiting for deletion",
+			builderValid: true,
+			objectExists: true,
+			assertError:  isContextDeadlineExceeded,
+		},
+		{
+			name:             "get failure returns error",
+			builderValid:     true,
+			objectExists:     false,
+			interceptorFuncs: interceptor.Funcs{Get: testFailingGet},
+			assertError:      isAPICallFailedWithVerb("get"),
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			var objects []runtime.Object
+			if testCase.objectExists {
+				objects = append(objects, buildDummyClusterScopedResource())
+			}
+
+			client := clients.GetTestClients(clients.TestClientParams{
+				K8sMockObjects:   objects,
+				SchemeAttachers:  []clients.SchemeAttacher{testSchemeAttacher},
+				InterceptorFuncs: testCase.interceptorFuncs,
+			})
+
+			builder := buildValidMockClusterScopedBuilder(client)
+			if !testCase.builderValid {
+				builder = buildInvalidMockClusterScopedBuilder(client)
+			}
+
+			// Use a very short timeout for testing.
+			err := WaitUntilDeleted[corev1.Namespace, corev1.NamespaceList](t.Context(), builder, 50*time.Millisecond)
+
+			assert.Truef(t, testCase.assertError(err), "got error %v", err)
+		})
+	}
+}
+
+func TestDeleteAndWait(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name             string
+		builderValid     bool
+		objectExists     bool
+		interceptorFuncs interceptor.Funcs
+		assertError      func(error) bool
+	}{
+		{
+			name:         "valid delete and wait",
+			builderValid: true,
+			objectExists: true,
+			assertError:  isErrorNil,
+		},
+		{
+			name:         "invalid builder",
+			builderValid: false,
+			objectExists: false,
+			assertError:  isInvalidBuilder,
+		},
+		{
+			name:         "resource does not exist succeeds",
+			builderValid: true,
+			objectExists: false,
+			assertError:  isErrorNil,
+		},
+		{
+			name:             "delete failure",
+			builderValid:     true,
+			objectExists:     true,
+			interceptorFuncs: interceptor.Funcs{Delete: testFailingDelete},
+			assertError:      isAPICallFailedWithVerb("delete"),
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			var objects []runtime.Object
+			if testCase.objectExists {
+				objects = append(objects, buildDummyClusterScopedResource())
+			}
+
+			client := clients.GetTestClients(clients.TestClientParams{
+				K8sMockObjects:   objects,
+				SchemeAttachers:  []clients.SchemeAttacher{testSchemeAttacher},
+				InterceptorFuncs: testCase.interceptorFuncs,
+			})
+
+			builder := buildValidMockClusterScopedBuilder(client)
+			if !testCase.builderValid {
+				builder = buildInvalidMockClusterScopedBuilder(client)
+			}
+
+			// Use a very short timeout for testing.
+			err := DeleteAndWait[corev1.Namespace, corev1.NamespaceList](t.Context(), builder, 50*time.Millisecond)
+
+			assert.Truef(t, testCase.assertError(err), "got error %v", err)
+
+			if err == nil {
+				assert.Nil(t, builder.GetObject())
+			}
+		})
+	}
+}
+
 //nolint:funlen // This function is only long because of the number of test cases.
 func TestList(t *testing.T) {
 	t.Parallel()
@@ -740,7 +875,7 @@ func TestList(t *testing.T) {
 			clientNil:      true,
 			schemeAttacher: testSchemeAttacher,
 			objectsExist:   false,
-			assertError:    errors.IsAPIClientNil,
+			assertError:    commonerrors.IsAPIClientNil,
 			expectedCount:  0,
 		},
 		{
@@ -748,7 +883,7 @@ func TestList(t *testing.T) {
 			clientNil:      false,
 			schemeAttacher: testFailingSchemeAttacher,
 			objectsExist:   false,
-			assertError:    errors.IsSchemeAttacherFailed,
+			assertError:    commonerrors.IsSchemeAttacherFailed,
 			expectedCount:  0,
 		},
 		{
@@ -767,7 +902,7 @@ func TestList(t *testing.T) {
 			t.Parallel()
 
 			var (
-				client  runtimeclient.Client
+				client  *clients.Settings
 				objects []runtime.Object
 			)
 
@@ -831,7 +966,7 @@ func TestValidate(t *testing.T) {
 			definitionNil: false,
 			apiClientNil:  false,
 			builderError:  nil,
-			assertError:   errors.IsBuilderNil,
+			assertError:   commonerrors.IsBuilderNil,
 		},
 		{
 			name:          "nil definition",
@@ -839,7 +974,7 @@ func TestValidate(t *testing.T) {
 			definitionNil: true,
 			apiClientNil:  false,
 			builderError:  nil,
-			assertError:   errors.IsBuilderDefinitionNil,
+			assertError:   commonerrors.IsBuilderDefinitionNil,
 		},
 		{
 			name:          "nil apiClient",
@@ -847,7 +982,7 @@ func TestValidate(t *testing.T) {
 			definitionNil: false,
 			apiClientNil:  true,
 			builderError:  nil,
-			assertError:   errors.IsAPIClientNil,
+			assertError:   commonerrors.IsAPIClientNil,
 		},
 		{
 			name:          "error message set",
