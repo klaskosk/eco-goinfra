@@ -12,60 +12,115 @@ import (
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// NamespacedNewBuilderFunc is a namespaced NewBuilder function signature.
-type NamespacedNewBuilderFunc[SB any] func(apiClient *clients.Settings, name, nsname string) SB
+// NewClusterScopedBuilderFunc is a NewClusterScopedBuilder function signature.
+type NewClusterScopedBuilderFunc[SB any] func(apiClient *clients.Settings, name string) SB
 
-// ClusterScopedNewBuilderFunc is a cluster-scoped NewBuilder function signature.
-type ClusterScopedNewBuilderFunc[SB any] func(apiClient *clients.Settings, name string) SB
+// NewNamespacedBuilderFunc is a NewNamespacedBuilder function signature.
+type NewNamespacedBuilderFunc[SB any] func(apiClient *clients.Settings, name, nsname string) SB
 
-// NewBuilderTestConfig provides the configuration needed to test a NewBuilder function wrapper.
-type NewBuilderTestConfig[
-	O, B any,
-	SO common.ObjectPointer[O],
-	SB common.BuilderPointer[B, O, SO],
-] struct {
-	SchemeAttacher clients.SchemeAttacher
-	ExpectedGVK    schema.GroupVersionKind
-	ResourceScope  ResourceScope
-	newBuilderFunc NamespacedNewBuilderFunc[SB]
+// GenericNewClusterScopedBuilderFunc is a generic new builder function signature for cluster-scoped resources.
+type GenericNewClusterScopedBuilderFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
+	apiClient runtimeclient.WithWatch,
+	schemeAttacher clients.SchemeAttacher,
+	name string,
+) SB
+
+// GenericNewNamespacedBuilderFunc is a generic new builder function signature for namespaced resources.
+type GenericNewNamespacedBuilderFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
+	apiClient runtimeclient.WithWatch,
+	schemeAttacher clients.SchemeAttacher,
+	name, nsname string,
+) SB
+
+// internalNewBuilderFunc is the unified internal function signature used by NewBuilderTestConfig. It should be possible
+// to make a thin wrapper around every other NewBuilder function to have this signature. This allows for unifying the
+// test cases across the different signatures.
+//
+// We use the clients.Settings type instead of the runtimeclient.WithWatch type because clients.Settings may be used in
+// place of runtimeclient.WithWatch, but not vice versa.
+type internalNewBuilderFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
+	apiClient *clients.Settings,
+	schemeAttacher clients.SchemeAttacher,
+	name, nsname string,
+) SB
+
+// NewBuilderTestConfig provides the configuration needed to test NewClusterScopedBuilder or NewNamespacedBuilder
+// functions.
+type NewBuilderTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] struct {
+	CommonTestConfig[O, B, SO, SB]
+
+	// newBuilderFunc is a unified function that wraps the actual new builder function being tested.
+	newBuilderFunc internalNewBuilderFunc[O, B, SO, SB]
+
+	// testSchemeAttacher indicates whether scheme attacher failures should be tested.
+	testSchemeAttacher bool
 }
 
-// NewNamespacedNewBuilderTestConfig creates a new NewBuilderTestConfig for namespaced resources.
-func NewNamespacedNewBuilderTestConfig[
-	O, B any,
-	SO common.ObjectPointer[O],
-	SB common.BuilderPointer[B, O, SO],
-](
-	newBuilderFunc NamespacedNewBuilderFunc[SB],
+// NewClusterScopedBuilderTestConfig creates a new NewBuilderTestConfig for cluster-scoped NewBuilder functions.
+func NewClusterScopedBuilderTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]](
+	newBuilderFunc NewClusterScopedBuilderFunc[SB],
 	schemeAttacher clients.SchemeAttacher,
 	expectedGVK schema.GroupVersionKind,
 ) NewBuilderTestConfig[O, B, SO, SB] {
 	return NewBuilderTestConfig[O, B, SO, SB]{
-		SchemeAttacher: schemeAttacher,
-		ExpectedGVK:    expectedGVK,
-		ResourceScope:  ResourceScopeNamespaced,
-		newBuilderFunc: newBuilderFunc,
+		CommonTestConfig: CommonTestConfig[O, B, SO, SB]{
+			SchemeAttacher: schemeAttacher,
+			ExpectedGVK:    expectedGVK,
+			ResourceScope:  ResourceScopeClusterScoped,
+		},
+		newBuilderFunc: func(apiClient *clients.Settings, _ clients.SchemeAttacher, name, _ string) SB {
+			return newBuilderFunc(apiClient, name)
+		},
+		testSchemeAttacher: false,
 	}
 }
 
-// NewClusterScopedNewBuilderTestConfig creates a new NewBuilderTestConfig for cluster-scoped resources. The
-// cluster-scoped NewBuilder function is wrapped in a closure that ignores the namespace parameter.
-func NewClusterScopedNewBuilderTestConfig[
-	O, B any,
-	SO common.ObjectPointer[O],
-	SB common.BuilderPointer[B, O, SO],
-](
-	newBuilderFunc ClusterScopedNewBuilderFunc[SB],
+// NewNamespacedBuilderTestConfig creates a new NewBuilderTestConfig for namespaced NewBuilder functions.
+func NewNamespacedBuilderTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]](
+	newBuilderFunc NewNamespacedBuilderFunc[SB],
 	schemeAttacher clients.SchemeAttacher,
 	expectedGVK schema.GroupVersionKind,
 ) NewBuilderTestConfig[O, B, SO, SB] {
 	return NewBuilderTestConfig[O, B, SO, SB]{
-		SchemeAttacher: schemeAttacher,
-		ExpectedGVK:    expectedGVK,
-		ResourceScope:  ResourceScopeClusterScoped,
-		newBuilderFunc: func(apiClient *clients.Settings, name, _ string) SB {
-			return newBuilderFunc(apiClient, name)
+		CommonTestConfig: CommonTestConfig[O, B, SO, SB]{
+			SchemeAttacher: schemeAttacher,
+			ExpectedGVK:    expectedGVK,
+			ResourceScope:  ResourceScopeNamespaced,
 		},
+		newBuilderFunc: func(apiClient *clients.Settings, _ clients.SchemeAttacher, name, nsname string) SB {
+			return newBuilderFunc(apiClient, name, nsname)
+		},
+		testSchemeAttacher: false,
+	}
+}
+
+// NewGenericClusterScopedBuilderTestConfig creates a new NewBuilderTestConfig for testing the generic
+// common.NewClusterScopedBuilder function.
+func NewGenericClusterScopedBuilderTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]](
+	commonTestConfig CommonTestConfig[O, B, SO, SB],
+	newBuilderFunc GenericNewClusterScopedBuilderFunc[O, B, SO, SB],
+) NewBuilderTestConfig[O, B, SO, SB] {
+	return NewBuilderTestConfig[O, B, SO, SB]{
+		CommonTestConfig: commonTestConfig,
+		newBuilderFunc: func(apiClient *clients.Settings, schemeAttacher clients.SchemeAttacher, name, _ string) SB {
+			return newBuilderFunc(apiClient, schemeAttacher, name)
+		},
+		testSchemeAttacher: true,
+	}
+}
+
+// NewGenericNamespacedBuilderTestConfig creates a new NewBuilderTestConfig for testing the generic
+// common.NewNamespacedBuilder function.
+func NewGenericNamespacedBuilderTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]](
+	commonTestConfig CommonTestConfig[O, B, SO, SB],
+	newBuilderFunc GenericNewNamespacedBuilderFunc[O, B, SO, SB],
+) NewBuilderTestConfig[O, B, SO, SB] {
+	return NewBuilderTestConfig[O, B, SO, SB]{
+		CommonTestConfig: commonTestConfig,
+		newBuilderFunc: func(apiClient *clients.Settings, schemeAttacher clients.SchemeAttacher, name, nsname string) SB {
+			return newBuilderFunc(apiClient, schemeAttacher, name, nsname)
+		},
+		testSchemeAttacher: true,
 	}
 }
 
@@ -75,50 +130,68 @@ func (config NewBuilderTestConfig[O, B, SO, SB]) Name() string {
 }
 
 // ExecuteTests runs the standard set of tests for a NewBuilder function.
+//
+//nolint:funlen // Test function with multiple test cases.
 func (config NewBuilderTestConfig[O, B, SO, SB]) ExecuteTests(t *testing.T) {
 	t.Helper()
 
 	t.Run("scheme attacher adds GVK", createSchemeAttacherGVKTest[O, SO](config.SchemeAttacher, config.ExpectedGVK))
 
 	type testCase struct {
-		name          string
-		clientNil     bool
-		builderName   string
-		builderNsName string
-		assertError   func(error) bool
+		name           string
+		clientNil      bool
+		builderName    string
+		builderNsName  string
+		schemeAttacher clients.SchemeAttacher
+		assertError    func(error) bool
 	}
 
 	testCases := []testCase{
 		{
-			name:          "valid builder creation",
-			clientNil:     false,
-			builderName:   testResourceName,
-			builderNsName: testResourceNamespace,
-			assertError:   isErrorNil,
+			name:           "valid builder creation",
+			clientNil:      false,
+			builderName:    testResourceName,
+			builderNsName:  testResourceNamespace,
+			schemeAttacher: config.SchemeAttacher,
+			assertError:    isErrorNil,
 		},
 		{
-			name:          "nil client returns error",
-			clientNil:     true,
-			builderName:   testResourceName,
-			builderNsName: testResourceNamespace,
-			assertError:   commonerrors.IsAPIClientNil,
+			name:           "nil client returns error",
+			clientNil:      true,
+			builderName:    testResourceName,
+			builderNsName:  testResourceNamespace,
+			schemeAttacher: config.SchemeAttacher,
+			assertError:    commonerrors.IsAPIClientNil,
 		},
 		{
-			name:          "empty name returns error",
-			clientNil:     false,
-			builderName:   "",
-			builderNsName: testResourceNamespace,
-			assertError:   commonerrors.IsBuilderNameEmpty,
+			name:           "empty name returns error",
+			clientNil:      false,
+			builderName:    "",
+			builderNsName:  testResourceNamespace,
+			schemeAttacher: config.SchemeAttacher,
+			assertError:    commonerrors.IsBuilderNameEmpty,
 		},
 	}
 
 	if config.ResourceScope.IsNamespaced() {
 		testCases = append(testCases, testCase{
-			name:          "empty namespace returns error",
-			clientNil:     false,
-			builderName:   testResourceName,
-			builderNsName: "",
-			assertError:   commonerrors.IsBuilderNamespaceEmpty,
+			name:           "empty namespace returns error",
+			clientNil:      false,
+			builderName:    testResourceName,
+			builderNsName:  "",
+			schemeAttacher: config.SchemeAttacher,
+			assertError:    commonerrors.IsBuilderNamespaceEmpty,
+		})
+	}
+
+	if config.testSchemeAttacher {
+		testCases = append(testCases, testCase{
+			name:           "scheme attachment failure returns error",
+			clientNil:      false,
+			builderName:    testResourceName,
+			builderNsName:  testResourceNamespace,
+			schemeAttacher: testFailingSchemeAttacher,
+			assertError:    commonerrors.IsSchemeAttacherFailed,
 		})
 	}
 
@@ -134,7 +207,7 @@ func (config NewBuilderTestConfig[O, B, SO, SB]) ExecuteTests(t *testing.T) {
 				})
 			}
 
-			builder := config.newBuilderFunc(client, testCase.builderName, testCase.builderNsName)
+			builder := config.newBuilderFunc(client, testCase.schemeAttacher, testCase.builderName, testCase.builderNsName)
 
 			require.NotNil(t, builder)
 			require.Truef(t, testCase.assertError(builder.GetError()), "unexpected error, got: %v", builder.GetError())
@@ -146,9 +219,6 @@ func (config NewBuilderTestConfig[O, B, SO, SB]) ExecuteTests(t *testing.T) {
 				if config.ResourceScope.IsNamespaced() {
 					assert.Equal(t, testCase.builderNsName, builder.GetDefinition().GetNamespace())
 				}
-
-				require.NotNil(t, builder.GetClient())
-				assert.Implements(t, (*runtimeclient.Client)(nil), builder.GetClient())
 
 				assert.Equal(t, config.ExpectedGVK, builder.GetGVK())
 			}

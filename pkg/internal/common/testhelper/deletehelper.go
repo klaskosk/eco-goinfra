@@ -1,6 +1,7 @@
 package testhelper
 
 import (
+	"context"
 	"testing"
 
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
@@ -23,13 +24,25 @@ type DeleteReturner[O, B any, SO common.ObjectPointer[O], SB common.BuilderPoint
 	Delete() (SB, error)
 }
 
+// internalDeleteFunc is the internal function signature used by DeleteTestConfig. All of the other delete functions
+// must be able to be wrapped in this signature.
+//
+// This type is different than the [GenericDeleteFunc] because it makes stricter assumptions about the builder type that
+// the common package does not. The constructor for the generic version enforces these constraints so they can be made
+// equivalent with a thin wrapper.
+type internalDeleteFunc[
+	O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(ctx context.Context, builder SB) error
+
+// GenericDeleteFunc is the signature for the common.Delete function that takes context and builder.
+type GenericDeleteFunc[O any, SO common.ObjectPointer[O]] func(ctx context.Context, builder common.Builder[O, SO]) error
+
 // DeleteTestConfig provides the configuration needed to test a Delete method.
 type DeleteTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] struct {
 	CommonTestConfig[O, B, SO, SB]
 
 	// deleteFunc is a function that deletes the resource and returns an error. It gets set by the constructor
 	// methods and will handle the different signatures of the Delete method.
-	deleteFunc func(SB) error
+	deleteFunc internalDeleteFunc[O, B, SO, SB]
 }
 
 // NewDeleterTestConfig creates a new DeleteTestConfig for builders that implement the Deleter interface.
@@ -38,7 +51,7 @@ func NewDeleterTestConfig[O, B any, SO common.ObjectPointer[O], SB Deleter[O, B,
 ) DeleteTestConfig[O, B, SO, SB] {
 	return DeleteTestConfig[O, B, SO, SB]{
 		CommonTestConfig: commonTestConfig,
-		deleteFunc: func(builder SB) error {
+		deleteFunc: func(_ context.Context, builder SB) error {
 			return builder.Delete()
 		},
 	}
@@ -50,10 +63,24 @@ func NewDeleteReturnerTestConfig[O, B any, SO common.ObjectPointer[O], SB Delete
 ) DeleteTestConfig[O, B, SO, SB] {
 	return DeleteTestConfig[O, B, SO, SB]{
 		CommonTestConfig: commonTestConfig,
-		deleteFunc: func(builder SB) error {
+		deleteFunc: func(_ context.Context, builder SB) error {
 			_, err := builder.Delete()
 
 			return err
+		},
+	}
+}
+
+// NewGenericDeleteTestConfig creates a new DeleteTestConfig with a custom delete function. This is useful for testing
+// standalone functions like common.Delete() rather than builder methods.
+func NewGenericDeleteTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]](
+	commonTestConfig CommonTestConfig[O, B, SO, SB],
+	deleteFunc GenericDeleteFunc[O, SO],
+) DeleteTestConfig[O, B, SO, SB] {
+	return DeleteTestConfig[O, B, SO, SB]{
+		CommonTestConfig: commonTestConfig,
+		deleteFunc: func(ctx context.Context, builder SB) error {
+			return deleteFunc(ctx, builder)
 		},
 	}
 }
@@ -130,7 +157,7 @@ func (config DeleteTestConfig[O, B, SO, SB]) ExecuteTests(t *testing.T) {
 
 			builder.SetError(testCase.builderError)
 
-			err := config.deleteFunc(builder)
+			err := config.deleteFunc(t.Context(), builder)
 
 			require.Truef(t, testCase.assertError(err), "unexpected error, got: %v", err)
 

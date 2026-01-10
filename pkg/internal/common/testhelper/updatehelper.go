@@ -1,6 +1,7 @@
 package testhelper
 
 import (
+	"context"
 	"testing"
 
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
@@ -23,13 +24,25 @@ type ForceUpdater[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer
 	Update(force bool) (SB, error)
 }
 
+// internalUpdateFunc is the internal function signature used by UpdateTestConfig. All of the other update functions
+// must be able to be wrapped in this signature.
+//
+// This type is different than the [GenericUpdateFunc] because it makes stricter assumptions about the builder type that
+// the common package does not. The constructor for the generic version enforces these constraints so they can be made
+// equivalent with a thin wrapper.
+type internalUpdateFunc[
+	O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(ctx context.Context, builder SB, force bool) (SB, error)
+
+// GenericUpdateFunc is the signature for the common.Update function that takes context and builder.
+type GenericUpdateFunc[O any, SO common.ObjectPointer[O]] func(ctx context.Context, builder common.Builder[O, SO], force bool) error
+
 // UpdateTestConfig provides the configuration needed to test an Update method without force.
 type UpdateTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] struct {
 	CommonTestConfig[O, B, SO, SB]
 
 	// updateFunc is a function that updates the resource and returns an error. It gets set by the constructor
 	// methods and will handle the different signatures of the Update method.
-	updateFunc func(SB, bool) (SB, error)
+	updateFunc internalUpdateFunc[O, B, SO, SB]
 	// alsoRunForceTests is a flag that indicates if force update tests should also be run. It gets set by the
 	// constructor methods.
 	alsoRunForceTests bool
@@ -42,7 +55,7 @@ func NewUpdateTestConfig[O, B any, SO common.ObjectPointer[O], SB Updater[O, B, 
 ) UpdateTestConfig[O, B, SO, SB] {
 	return UpdateTestConfig[O, B, SO, SB]{
 		CommonTestConfig: commonTestConfig,
-		updateFunc: func(builder SB, force bool) (SB, error) {
+		updateFunc: func(_ context.Context, builder SB, force bool) (SB, error) {
 			return builder.Update()
 		},
 		alsoRunForceTests: false,
@@ -56,10 +69,26 @@ func NewForceUpdateTestConfig[O, B any, SO common.ObjectPointer[O], SB ForceUpda
 ) UpdateTestConfig[O, B, SO, SB] {
 	return UpdateTestConfig[O, B, SO, SB]{
 		CommonTestConfig: commonTestConfig,
-		updateFunc: func(builder SB, force bool) (SB, error) {
+		updateFunc: func(_ context.Context, builder SB, force bool) (SB, error) {
 			return builder.Update(force)
 		},
 		alsoRunForceTests: true,
+	}
+}
+
+// NewGenericUpdateTestConfig creates a new UpdateTestConfig with a custom update function. This is useful for testing
+// standalone functions like common.Update() rather than builder methods.
+func NewGenericUpdateTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]](
+	commonTestConfig CommonTestConfig[O, B, SO, SB],
+	updateFunc GenericUpdateFunc[O, SO],
+	alsoRunForceTests bool,
+) UpdateTestConfig[O, B, SO, SB] {
+	return UpdateTestConfig[O, B, SO, SB]{
+		CommonTestConfig: commonTestConfig,
+		updateFunc: func(ctx context.Context, builder SB, force bool) (SB, error) {
+			return builder, updateFunc(ctx, builder, force)
+		},
+		alsoRunForceTests: alsoRunForceTests,
 	}
 }
 
@@ -146,7 +175,7 @@ func (config UpdateTestConfig[O, B, SO, SB]) executeNonForceTests(t *testing.T) 
 			builder.SetError(testCase.builderError)
 			builder.GetDefinition().SetAnnotations(map[string]string{testAnnotationKey: testAnnotationValue})
 
-			result, err := config.updateFunc(builder, false)
+			result, err := config.updateFunc(t.Context(), builder, false)
 
 			require.Truef(t, testCase.assertError(err), "unexpected error, got: %v", err)
 
@@ -226,7 +255,7 @@ func (config UpdateTestConfig[O, B, SO, SB]) executeForceTests(t *testing.T) {
 
 			builder.GetDefinition().SetAnnotations(map[string]string{testAnnotationKey: testAnnotationValue})
 
-			result, err := config.updateFunc(builder, true)
+			result, err := config.updateFunc(t.Context(), builder, true)
 
 			require.Truef(t, testCase.assertError(err), "unexpected error, got: %v", err)
 

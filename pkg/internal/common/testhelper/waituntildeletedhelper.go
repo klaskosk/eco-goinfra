@@ -1,6 +1,7 @@
 package testhelper
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -20,16 +21,48 @@ type WaitUntilDeleter[O, B any, SO common.ObjectPointer[O], SB common.BuilderPoi
 	WaitUntilDeleted(timeout time.Duration) error
 }
 
+// internalWaitUntilDeletedFunc defines the signature for wait until deleted operations.
+type internalWaitUntilDeletedFunc[
+	O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO],
+] func(ctx context.Context, builder SB, timeout time.Duration) error
+
+// GenericWaitUntilDeletedFunc is the signature for the common.WaitUntilDeleted function.
+type GenericWaitUntilDeletedFunc[O any, SO common.ObjectPointer[O]] func(
+	ctx context.Context, builder common.Builder[O, SO], timeout time.Duration) error
+
 // WaitUntilDeletedTestConfig provides the configuration needed to test a WaitUntilDeleted method.
-type WaitUntilDeletedTestConfig[O, B any, SO common.ObjectPointer[O], SB WaitUntilDeleter[O, B, SO, SB]] struct {
+type WaitUntilDeletedTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] struct {
 	CommonTestConfig[O, B, SO, SB]
+
+	// waitUntilDeletedFunc is a function that waits until the resource is deleted and returns an error.
+	waitUntilDeletedFunc internalWaitUntilDeletedFunc[O, B, SO, SB]
 }
 
-// NewWaitUntilDeletedTestConfig creates a new WaitUntilDeletedTestConfig with the given parameters.
+// NewWaitUntilDeletedTestConfig creates a new WaitUntilDeletedTestConfig with the given parameters for builders that
+// implement the WaitUntilDeleter interface.
 func NewWaitUntilDeletedTestConfig[O, B any, SO common.ObjectPointer[O], SB WaitUntilDeleter[O, B, SO, SB]](
 	commonTestConfig CommonTestConfig[O, B, SO, SB],
 ) WaitUntilDeletedTestConfig[O, B, SO, SB] {
-	return WaitUntilDeletedTestConfig[O, B, SO, SB]{CommonTestConfig: commonTestConfig}
+	return WaitUntilDeletedTestConfig[O, B, SO, SB]{
+		CommonTestConfig: commonTestConfig,
+		waitUntilDeletedFunc: func(_ context.Context, builder SB, timeout time.Duration) error {
+			return builder.WaitUntilDeleted(timeout)
+		},
+	}
+}
+
+// NewGenericWaitUntilDeletedTestConfig creates a new WaitUntilDeletedTestConfig with a custom wait function. This is
+// useful for testing standalone functions like common.WaitUntilDeleted() rather than builder methods.
+func NewGenericWaitUntilDeletedTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]](
+	commonTestConfig CommonTestConfig[O, B, SO, SB],
+	waitUntilDeletedFunc GenericWaitUntilDeletedFunc[O, SO],
+) WaitUntilDeletedTestConfig[O, B, SO, SB] {
+	return WaitUntilDeletedTestConfig[O, B, SO, SB]{
+		CommonTestConfig: commonTestConfig,
+		waitUntilDeletedFunc: func(ctx context.Context, builder SB, timeout time.Duration) error {
+			return waitUntilDeletedFunc(ctx, builder, timeout)
+		},
+	}
 }
 
 // Name returns the name to use for running these tests.
@@ -98,7 +131,7 @@ func (config WaitUntilDeletedTestConfig[O, B, SO, SB]) ExecuteTests(t *testing.T
 
 			builder.SetError(testCase.builderError)
 
-			err := builder.WaitUntilDeleted(testTimeout)
+			err := config.waitUntilDeletedFunc(t.Context(), builder, testTimeout)
 
 			require.Truef(t, testCase.assertError(err), "unexpected error, got: %v", err)
 		})

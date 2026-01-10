@@ -1,6 +1,7 @@
 package testhelper
 
 import (
+	"context"
 	"testing"
 
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
@@ -17,16 +18,51 @@ type Creator[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O
 	Create() (SB, error)
 }
 
+// internalCreateFunc is the internal function signature used by CreateTestConfig. All of the other create functions
+// must be able to be wrapped in this signature.
+//
+// This type is different than the [GenericCreateFunc] because it makes stricter assumptions about the builder type that
+// the common package does not. The constructor for the generic version enforces these constraints so they can be made
+// equivalent with a thin wrapper.
+type internalCreateFunc[
+	O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(ctx context.Context, builder SB) (SB, error)
+
+// GenericCreateFunc is the signature for the common.Create function that takes context and builder.
+type GenericCreateFunc[O any, SO common.ObjectPointer[O]] func(ctx context.Context, builder common.Builder[O, SO]) error
+
 // CreateTestConfig provides the configuration needed to test a Create method.
-type CreateTestConfig[O, B any, SO common.ObjectPointer[O], SB Creator[O, B, SO, SB]] struct {
+type CreateTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] struct {
 	CommonTestConfig[O, B, SO, SB]
+
+	// createFunc is a function that creates the resource and returns the builder and an error.
+	createFunc internalCreateFunc[O, B, SO, SB]
 }
 
-// NewCreateTestConfig creates a new CreateTestConfig with the given parameters.
+// NewCreateTestConfig creates a new CreateTestConfig with the given parameters for builders that implement the Creator
+// interface.
 func NewCreateTestConfig[O, B any, SO common.ObjectPointer[O], SB Creator[O, B, SO, SB]](
 	commonTestConfig CommonTestConfig[O, B, SO, SB],
 ) CreateTestConfig[O, B, SO, SB] {
-	return CreateTestConfig[O, B, SO, SB]{CommonTestConfig: commonTestConfig}
+	return CreateTestConfig[O, B, SO, SB]{
+		CommonTestConfig: commonTestConfig,
+		createFunc: func(_ context.Context, builder SB) (SB, error) {
+			return builder.Create()
+		},
+	}
+}
+
+// NewGenericCreateTestConfig creates a new CreateTestConfig with a custom create function. This is useful for testing
+// standalone functions like common.Create() rather than builder methods.
+func NewGenericCreateTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]](
+	commonTestConfig CommonTestConfig[O, B, SO, SB],
+	createFunc GenericCreateFunc[O, SO],
+) CreateTestConfig[O, B, SO, SB] {
+	return CreateTestConfig[O, B, SO, SB]{
+		CommonTestConfig: commonTestConfig,
+		createFunc: func(ctx context.Context, builder SB) (SB, error) {
+			return builder, createFunc(ctx, builder)
+		},
+	}
 }
 
 // Name returns the name to use for running these tests.
@@ -101,7 +137,7 @@ func (config CreateTestConfig[O, B, SO, SB]) ExecuteTests(t *testing.T) {
 
 			builder.SetError(testCase.builderError)
 
-			result, err := builder.Create()
+			result, err := config.createFunc(t.Context(), builder)
 
 			require.Truef(t, testCase.assertError(err), "unexpected error, got: %v", err)
 

@@ -1,6 +1,7 @@
 package testhelper
 
 import (
+	"context"
 	"testing"
 
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
@@ -11,6 +12,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // NamespacedPullFunc is a namespaced Pull function signature (e.g., PullHFS, PullHFC).
@@ -19,16 +21,47 @@ type NamespacedPullFunc[SB any] func(apiClient *clients.Settings, name, nsname s
 // ClusterScopedPullFunc is a cluster-scoped Pull function signature.
 type ClusterScopedPullFunc[SB any] func(apiClient *clients.Settings, name string) (SB, error)
 
+// GenericClusterScopedPullFunc is the signature for the common.PullClusterScopedBuilder function.
+type GenericClusterScopedPullFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
+	ctx context.Context,
+	apiClient runtimeclient.WithWatch,
+	schemeAttacher clients.SchemeAttacher,
+	name string,
+) (SB, error)
+
+// GenericNamespacedPullFunc is the signature for the common.PullNamespacedBuilder function.
+type GenericNamespacedPullFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
+	ctx context.Context,
+	apiClient runtimeclient.WithWatch,
+	schemeAttacher clients.SchemeAttacher,
+	name, nsname string,
+) (SB, error)
+
+// internalPullFunc is the unified internal function signature used by PullTestConfig. All of the other pull functions
+// must be able to be wrapped in this signature.
+//
+// We use the clients.Settings type instead of the runtimeclient.WithWatch type because clients.Settings may be used in
+// place of runtimeclient.WithWatch, but not vice versa.
+type internalPullFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
+	ctx context.Context,
+	apiClient *clients.Settings,
+	schemeAttacher clients.SchemeAttacher,
+	name, nsname string,
+) (SB, error)
+
 // PullTestConfig provides the configuration needed to test a Pull function wrapper.
 type PullTestConfig[
 	O, B any,
 	SO common.ObjectPointer[O],
 	SB common.BuilderPointer[B, O, SO],
 ] struct {
-	SchemeAttacher clients.SchemeAttacher
-	ExpectedGVK    schema.GroupVersionKind
-	ResourceScope  ResourceScope
-	pullFunc       NamespacedPullFunc[SB]
+	CommonTestConfig[O, B, SO, SB]
+
+	// pullFunc is a unified function that wraps the actual pull function being tested.
+	pullFunc internalPullFunc[O, B, SO, SB]
+
+	// testSchemeAttacher indicates whether scheme attacher failures should be tested.
+	testSchemeAttacher bool
 }
 
 // NewNamespacedPullTestConfig creates a new PullTestConfig for namespaced resources.
@@ -42,10 +75,15 @@ func NewNamespacedPullTestConfig[
 	expectedGVK schema.GroupVersionKind,
 ) PullTestConfig[O, B, SO, SB] {
 	return PullTestConfig[O, B, SO, SB]{
-		SchemeAttacher: schemeAttacher,
-		ExpectedGVK:    expectedGVK,
-		ResourceScope:  ResourceScopeNamespaced,
-		pullFunc:       pullFunc,
+		CommonTestConfig: CommonTestConfig[O, B, SO, SB]{
+			SchemeAttacher: schemeAttacher,
+			ExpectedGVK:    expectedGVK,
+			ResourceScope:  ResourceScopeNamespaced,
+		},
+		pullFunc: func(_ context.Context, apiClient *clients.Settings, _ clients.SchemeAttacher, name, nsname string) (SB, error) {
+			return pullFunc(apiClient, name, nsname)
+		},
+		testSchemeAttacher: false,
 	}
 }
 
@@ -61,12 +99,45 @@ func NewClusterScopedPullTestConfig[
 	expectedGVK schema.GroupVersionKind,
 ) PullTestConfig[O, B, SO, SB] {
 	return PullTestConfig[O, B, SO, SB]{
-		SchemeAttacher: schemeAttacher,
-		ExpectedGVK:    expectedGVK,
-		ResourceScope:  ResourceScopeClusterScoped,
-		pullFunc: func(apiClient *clients.Settings, name, _ string) (SB, error) {
+		CommonTestConfig: CommonTestConfig[O, B, SO, SB]{
+			SchemeAttacher: schemeAttacher,
+			ExpectedGVK:    expectedGVK,
+			ResourceScope:  ResourceScopeClusterScoped,
+		},
+		pullFunc: func(_ context.Context, apiClient *clients.Settings, _ clients.SchemeAttacher, name, _ string) (SB, error) {
 			return pullFunc(apiClient, name)
 		},
+		testSchemeAttacher: false,
+	}
+}
+
+// NewGenericClusterScopedPullTestConfig creates a new PullTestConfig for testing the generic
+// common.PullClusterScopedBuilder function.
+func NewGenericClusterScopedPullTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]](
+	commonTestConfig CommonTestConfig[O, B, SO, SB],
+	pullFunc GenericClusterScopedPullFunc[O, B, SO, SB],
+) PullTestConfig[O, B, SO, SB] {
+	return PullTestConfig[O, B, SO, SB]{
+		CommonTestConfig: commonTestConfig,
+		pullFunc: func(ctx context.Context, apiClient *clients.Settings, schemeAttacher clients.SchemeAttacher, name, _ string) (SB, error) {
+			return pullFunc(ctx, apiClient, schemeAttacher, name)
+		},
+		testSchemeAttacher: true,
+	}
+}
+
+// NewGenericNamespacedPullTestConfig creates a new PullTestConfig for testing the generic
+// common.PullNamespacedBuilder function.
+func NewGenericNamespacedPullTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]](
+	commonTestConfig CommonTestConfig[O, B, SO, SB],
+	pullFunc GenericNamespacedPullFunc[O, B, SO, SB],
+) PullTestConfig[O, B, SO, SB] {
+	return PullTestConfig[O, B, SO, SB]{
+		CommonTestConfig: commonTestConfig,
+		pullFunc: func(ctx context.Context, apiClient *clients.Settings, schemeAttacher clients.SchemeAttacher, name, nsname string) (SB, error) {
+			return pullFunc(ctx, apiClient, schemeAttacher, name, nsname)
+		},
+		testSchemeAttacher: true,
 	}
 }
 
@@ -84,57 +155,75 @@ func (config PullTestConfig[O, B, SO, SB]) ExecuteTests(t *testing.T) {
 	t.Run("scheme attacher adds GVK", createSchemeAttacherGVKTest[O, SO](config.SchemeAttacher, config.ExpectedGVK))
 
 	type testCase struct {
-		name          string
-		clientNil     bool
-		builderName   string
-		builderNsName string
-		objectExists  bool
-		assertError   func(error) bool
+		name           string
+		clientNil      bool
+		builderName    string
+		builderNsName  string
+		schemeAttacher clients.SchemeAttacher
+		objectExists   bool
+		assertError    func(error) bool
 	}
 
 	testCases := []testCase{
 		{
-			name:          "valid pull existing resource",
-			clientNil:     false,
-			builderName:   testResourceName,
-			builderNsName: testResourceNamespace,
-			objectExists:  true,
-			assertError:   isErrorNil,
+			name:           "valid pull existing resource",
+			clientNil:      false,
+			builderName:    testResourceName,
+			builderNsName:  testResourceNamespace,
+			schemeAttacher: config.SchemeAttacher,
+			objectExists:   true,
+			assertError:    isErrorNil,
 		},
 		{
-			name:          "nil client returns error",
-			clientNil:     true,
-			builderName:   testResourceName,
-			builderNsName: testResourceNamespace,
-			objectExists:  false,
-			assertError:   commonerrors.IsAPIClientNil,
+			name:           "nil client returns error",
+			clientNil:      true,
+			builderName:    testResourceName,
+			builderNsName:  testResourceNamespace,
+			schemeAttacher: config.SchemeAttacher,
+			objectExists:   false,
+			assertError:    commonerrors.IsAPIClientNil,
 		},
 		{
-			name:          "empty name returns error",
-			clientNil:     false,
-			builderName:   "",
-			builderNsName: testResourceNamespace,
-			objectExists:  false,
-			assertError:   commonerrors.IsBuilderNameEmpty,
+			name:           "empty name returns error",
+			clientNil:      false,
+			builderName:    "",
+			builderNsName:  testResourceNamespace,
+			schemeAttacher: config.SchemeAttacher,
+			objectExists:   false,
+			assertError:    commonerrors.IsBuilderNameEmpty,
 		},
 		{
-			name:          "non-existent resource returns not found",
-			clientNil:     false,
-			builderName:   "non-existent-resource",
-			builderNsName: "non-existent-namespace",
-			objectExists:  false,
-			assertError:   k8serrors.IsNotFound,
+			name:           "non-existent resource returns not found",
+			clientNil:      false,
+			builderName:    "non-existent-resource",
+			builderNsName:  "non-existent-namespace",
+			schemeAttacher: config.SchemeAttacher,
+			objectExists:   false,
+			assertError:    k8serrors.IsNotFound,
 		},
 	}
 
 	if config.ResourceScope.IsNamespaced() {
 		testCases = append(testCases, testCase{
-			name:          "empty namespace returns error",
-			clientNil:     false,
-			builderName:   testResourceName,
-			builderNsName: "",
-			objectExists:  false,
-			assertError:   commonerrors.IsBuilderNamespaceEmpty,
+			name:           "empty namespace returns error",
+			clientNil:      false,
+			builderName:    testResourceName,
+			builderNsName:  "",
+			schemeAttacher: config.SchemeAttacher,
+			objectExists:   false,
+			assertError:    commonerrors.IsBuilderNamespaceEmpty,
+		})
+	}
+
+	if config.testSchemeAttacher {
+		testCases = append(testCases, testCase{
+			name:           "scheme attachment failure returns error",
+			clientNil:      false,
+			builderName:    testResourceName,
+			builderNsName:  testResourceNamespace,
+			schemeAttacher: testFailingSchemeAttacher,
+			objectExists:   false,
+			assertError:    commonerrors.IsSchemeAttacherFailed,
 		})
 	}
 
@@ -163,7 +252,7 @@ func (config PullTestConfig[O, B, SO, SB]) ExecuteTests(t *testing.T) {
 				})
 			}
 
-			builder, err := config.pullFunc(client, testCase.builderName, testCase.builderNsName)
+			builder, err := config.pullFunc(t.Context(), client, testCase.schemeAttacher, testCase.builderName, testCase.builderNsName)
 
 			require.Truef(t, testCase.assertError(err), "unexpected error, got: %v", err)
 

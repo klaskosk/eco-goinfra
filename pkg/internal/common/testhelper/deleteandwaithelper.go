@@ -1,6 +1,7 @@
 package testhelper
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -25,13 +26,23 @@ type DeleteAndWaitReturner[O, B any, SO common.ObjectPointer[O], SB common.Build
 	DeleteAndWait(timeout time.Duration) (SB, error)
 }
 
+// internalDeleteAndWaitFunc is the internal function signature used by DeleteAndWaitTestConfig. All of the other
+// delete and wait functions must be able to be wrapped in this signature.
+type internalDeleteAndWaitFunc[
+	O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO],
+] func(ctx context.Context, builder SB, timeout time.Duration) error
+
+// GenericDeleteAndWaitFunc is the signature for the common.DeleteAndWait function.
+type GenericDeleteAndWaitFunc[O any, SO common.ObjectPointer[O]] func(
+	ctx context.Context, builder common.Builder[O, SO], timeout time.Duration) error
+
 // DeleteAndWaitTestConfig provides the configuration needed to test a DeleteAndWait method.
 type DeleteAndWaitTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] struct {
 	CommonTestConfig[O, B, SO, SB]
 
 	// deleteAndWaitFunc is a function that deletes the resource and waits, returning an error. It gets set by the
 	// constructor methods and will handle the different signatures of the DeleteAndWait method.
-	deleteAndWaitFunc func(SB, time.Duration) error
+	deleteAndWaitFunc internalDeleteAndWaitFunc[O, B, SO, SB]
 }
 
 // NewDeleteAndWaiterTestConfig creates a new DeleteAndWaitTestConfig for builders that implement the DeleteAndWaiter
@@ -41,7 +52,7 @@ func NewDeleteAndWaiterTestConfig[O, B any, SO common.ObjectPointer[O], SB Delet
 ) DeleteAndWaitTestConfig[O, B, SO, SB] {
 	return DeleteAndWaitTestConfig[O, B, SO, SB]{
 		CommonTestConfig: commonTestConfig,
-		deleteAndWaitFunc: func(builder SB, timeout time.Duration) error {
+		deleteAndWaitFunc: func(_ context.Context, builder SB, timeout time.Duration) error {
 			return builder.DeleteAndWait(timeout)
 		},
 	}
@@ -54,10 +65,24 @@ func NewDeleteAndWaitReturnerTestConfig[O, B any, SO common.ObjectPointer[O], SB
 ) DeleteAndWaitTestConfig[O, B, SO, SB] {
 	return DeleteAndWaitTestConfig[O, B, SO, SB]{
 		CommonTestConfig: commonTestConfig,
-		deleteAndWaitFunc: func(builder SB, timeout time.Duration) error {
+		deleteAndWaitFunc: func(_ context.Context, builder SB, timeout time.Duration) error {
 			_, err := builder.DeleteAndWait(timeout)
 
 			return err
+		},
+	}
+}
+
+// NewGenericDeleteAndWaitTestConfig creates a new DeleteAndWaitTestConfig with a custom delete and wait function. This
+// is useful for testing standalone functions like common.DeleteAndWait() rather than builder methods.
+func NewGenericDeleteAndWaitTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]](
+	commonTestConfig CommonTestConfig[O, B, SO, SB],
+	deleteAndWaitFunc GenericDeleteAndWaitFunc[O, SO],
+) DeleteAndWaitTestConfig[O, B, SO, SB] {
+	return DeleteAndWaitTestConfig[O, B, SO, SB]{
+		CommonTestConfig: commonTestConfig,
+		deleteAndWaitFunc: func(ctx context.Context, builder SB, timeout time.Duration) error {
+			return deleteAndWaitFunc(ctx, builder, timeout)
 		},
 	}
 }
@@ -134,7 +159,7 @@ func (config DeleteAndWaitTestConfig[O, B, SO, SB]) ExecuteTests(t *testing.T) {
 
 			builder.SetError(testCase.builderError)
 
-			err := config.deleteAndWaitFunc(builder, testTimeout)
+			err := config.deleteAndWaitFunc(t.Context(), builder, testTimeout)
 
 			require.Truef(t, testCase.assertError(err), "unexpected error, got: %v", err)
 

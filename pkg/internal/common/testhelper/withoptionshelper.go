@@ -15,16 +15,41 @@ type WithOptionsUser[O, B any, SO common.ObjectPointer[O], SB common.BuilderPoin
 	WithOptions(options ...func(SB) (SB, error)) SB
 }
 
+// WithOptionsFunc defines the signature for with options operations.
+type WithOptionsFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
+	builder SB, options ...func(SB) (SB, error)) SB
+
 // WithOptionsTestConfig provides the configuration needed to test a WithOptions method.
-type WithOptionsTestConfig[O, B any, SO common.ObjectPointer[O], SB WithOptionsUser[O, B, SO, SB]] struct {
+type WithOptionsTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] struct {
 	CommonTestConfig[O, B, SO, SB]
+
+	// withOptionsFunc is a function that applies options to the builder and returns the result.
+	withOptionsFunc WithOptionsFunc[O, B, SO, SB]
 }
 
-// NewWithOptionsTestConfig creates a new WithOptionsTestConfig with the given parameters.
+// NewWithOptionsTestConfig creates a new WithOptionsTestConfig with the given parameters for builders that implement
+// the WithOptionsUser interface.
 func NewWithOptionsTestConfig[O, B any, SO common.ObjectPointer[O], SB WithOptionsUser[O, B, SO, SB]](
 	commonTestConfig CommonTestConfig[O, B, SO, SB],
 ) WithOptionsTestConfig[O, B, SO, SB] {
-	return WithOptionsTestConfig[O, B, SO, SB]{CommonTestConfig: commonTestConfig}
+	return WithOptionsTestConfig[O, B, SO, SB]{
+		CommonTestConfig: commonTestConfig,
+		withOptionsFunc: func(builder SB, options ...func(SB) (SB, error)) SB {
+			return builder.WithOptions(options...)
+		},
+	}
+}
+
+// NewGenericWithOptionsTestConfig creates a new WithOptionsTestConfig with a custom with options function. This is
+// useful for testing standalone functions like common.WithOptions() rather than builder methods.
+func NewGenericWithOptionsTestConfig[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]](
+	commonTestConfig CommonTestConfig[O, B, SO, SB],
+	withOptionsFunc WithOptionsFunc[O, B, SO, SB],
+) WithOptionsTestConfig[O, B, SO, SB] {
+	return WithOptionsTestConfig[O, B, SO, SB]{
+		CommonTestConfig: commonTestConfig,
+		withOptionsFunc:  withOptionsFunc,
+	}
 }
 
 // Name returns the name to use for running these tests.
@@ -89,7 +114,7 @@ func (config WithOptionsTestConfig[O, B, SO, SB]) ExecuteTests(t *testing.T) {
 
 			builder.SetError(testCase.builderError)
 
-			result := builder.WithOptions(testCase.options...)
+			result := config.withOptionsFunc(builder, testCase.options...)
 
 			require.NotNil(t, result)
 			require.Truef(t, testCase.assertError(result.GetError()), "unexpected error, got: %v", result.GetError())

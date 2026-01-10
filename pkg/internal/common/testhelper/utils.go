@@ -23,15 +23,18 @@ const (
 )
 
 var (
-	errCreateFailure  = errors.New("simulated create failure")
-	errDeleteFailure  = errors.New("simulated delete failure")
-	errUpdateFailure  = errors.New("simulated update failure")
-	errListFailure    = errors.New("simulated list failure")
-	errInvalidBuilder = errors.New("invalid builder error")
-	errOptionFailure  = errors.New("simulated option failure")
+	errCreateFailure = errors.New("simulated create failure")
+	errGetFailure    = errors.New("simulated get failure")
+	errListFailure   = errors.New("simulated list failure")
+	errUpdateFailure = errors.New("simulated update failure")
+	errDeleteFailure = errors.New("simulated delete failure")
+
+	errInvalidBuilder   = errors.New("invalid builder error")
+	errOptionFailure    = errors.New("simulated option failure")
+	errSchemeAttachment = errors.New("scheme attachment failed")
 )
 
-var testFailingCreate = func(
+func testFailingCreate(
 	ctx context.Context,
 	client runtimeclient.WithWatch,
 	obj runtimeclient.Object,
@@ -40,7 +43,7 @@ var testFailingCreate = func(
 	return errCreateFailure
 }
 
-var testFailingDelete = func(
+func testFailingDelete(
 	ctx context.Context,
 	client runtimeclient.WithWatch,
 	obj runtimeclient.Object,
@@ -49,7 +52,7 @@ var testFailingDelete = func(
 	return errDeleteFailure
 }
 
-var testFailingUpdate = func(
+func testFailingUpdate(
 	ctx context.Context,
 	client runtimeclient.WithWatch,
 	obj runtimeclient.Object,
@@ -58,13 +61,23 @@ var testFailingUpdate = func(
 	return errUpdateFailure
 }
 
-var testFailingList = func(
+func testFailingList(
 	ctx context.Context,
 	client runtimeclient.WithWatch,
 	list runtimeclient.ObjectList,
 	opts ...runtimeclient.ListOption,
 ) error {
 	return errListFailure
+}
+
+func testFailingGet(
+	ctx context.Context,
+	client runtimeclient.WithWatch,
+	key runtimeclient.ObjectKey,
+	obj runtimeclient.Object,
+	opts ...runtimeclient.GetOption,
+) error {
+	return errGetFailure
 }
 
 func isErrorNil(err error) bool {
@@ -75,14 +88,6 @@ func isAPICallFailedWithCreate(err error) bool {
 	return commonerrors.IsAPICallFailedWithVerb(err, "create")
 }
 
-func isAPICallFailedWithDelete(err error) bool {
-	return commonerrors.IsAPICallFailedWithVerb(err, "delete")
-}
-
-func isAPICallFailedWithUpdate(err error) bool {
-	return commonerrors.IsAPICallFailedWithVerb(err, "update")
-}
-
 func isAPICallFailedWithGet(err error) bool {
 	return commonerrors.IsAPICallFailedWithVerb(err, "get")
 }
@@ -91,16 +96,24 @@ func isAPICallFailedWithList(err error) bool {
 	return commonerrors.IsAPICallFailedWithVerb(err, "list")
 }
 
+func isAPICallFailedWithUpdate(err error) bool {
+	return commonerrors.IsAPICallFailedWithVerb(err, "update")
+}
+
+func isAPICallFailedWithDelete(err error) bool {
+	return commonerrors.IsAPICallFailedWithVerb(err, "delete")
+}
+
 func isInvalidBuilder(err error) bool {
 	return errors.Is(err, errInvalidBuilder)
 }
 
-func isContextDeadlineExceeded(err error) bool {
-	return errors.Is(err, context.DeadlineExceeded)
-}
-
 func isOptionFailure(err error) bool {
 	return errors.Is(err, errOptionFailure)
+}
+
+func isContextDeadlineExceeded(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded)
 }
 
 func buildDummyObject[O any, SO common.ObjectPointer[O]](name, namespace string) SO {
@@ -132,6 +145,10 @@ func testFailingOption[O, B any, SO common.ObjectPointer[O], SB common.BuilderPo
 	return func(builder SB) (SB, error) {
 		return builder, errOptionFailure
 	}
+}
+
+func testFailingSchemeAttacher(scheme *runtime.Scheme) error {
+	return errSchemeAttachment
 }
 
 // createSchemeAttacherGVKTest creates a test function that checks if the scheme attacher registers the expected GVK.
