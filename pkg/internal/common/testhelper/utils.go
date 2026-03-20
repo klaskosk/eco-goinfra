@@ -44,6 +44,8 @@ var (
 	// errSchemeAttachment simulates a failure when registering types with the runtime scheme. Used to verify that
 	// builders properly handle scheme registration errors during client setup.
 	errSchemeAttachment = errors.New("scheme attachment failed")
+
+	errOptionFailure = errors.New("simulated option failure")
 )
 
 // testFailingCreate is an interceptor function that always returns errCreateFailure. Used with fake client interceptors
@@ -134,6 +136,10 @@ func isInvalidBuilder(err error) bool {
 	return errors.Is(err, errInvalidBuilder)
 }
 
+func isOptionFailure(err error) bool {
+	return errors.Is(err, errOptionFailure)
+}
+
 // buildDummyObject creates a minimal Kubernetes object with only name and namespace set. The namespace is always set
 // even for cluster-scoped resources since the Kubernetes API simply ignores it for those types. This avoids needing
 // separate constructors for namespaced vs cluster-scoped test objects.
@@ -150,6 +156,67 @@ func buildDummyObject[O any, SO common.ObjectPointer[O]](name, namespace string)
 // propagate scheme registration failures rather than silently continuing with an incomplete scheme.
 func testFailingSchemeAttacher(scheme *runtime.Scheme) error {
 	return errSchemeAttachment
+}
+
+// testAnnotationOption returns an option that sets a test annotation on the builder.
+func testAnnotationOption[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO], AO common.AdditionalOption[SB]]() AO {
+	setTestAnnotation := func(builder SB) (SB, error) {
+		annotations := builder.GetDefinition().GetAnnotations()
+		if annotations == nil {
+			annotations = make(map[string]string)
+		}
+
+		annotations[testAnnotationKey] = testAnnotationValue
+		builder.GetDefinition().SetAnnotations(annotations)
+
+		return builder, nil
+	}
+
+	return AO(setTestAnnotation)
+}
+
+// testFailingOption returns an option that always returns an error.
+func testFailingOption[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO], AO common.AdditionalOption[SB]]() AO {
+	alwaysFail := func(builder SB) (SB, error) {
+		return builder, errOptionFailure
+	}
+
+	return AO(alwaysFail)
+}
+
+// testNilBuilderOption returns an option that returns (nil, nil). This exercises the defensive guard in WithOptions
+// against options that accidentally return a nil builder without an error.
+func testNilBuilderOption[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO], AO common.AdditionalOption[SB]]() AO {
+	returnNil := func(_ SB) (SB, error) {
+		var zero SB
+
+		return zero, nil
+	}
+
+	return AO(returnNil)
+}
+
+// testFailingOptionWithReplacementBuilder returns an option that returns a new builder alongside an error. This
+// exercises the path where WithOptions must promote the replacement builder before setting the error on it, rather than
+// returning the stale pre-option builder.
+func testFailingOptionWithReplacementBuilder[
+	O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO], AO common.AdditionalOption[SB],
+]() AO {
+	failWithReplacement := func(_ SB) (SB, error) {
+		replacement := SB(new(B))
+
+		if mixinAttacher, ok := any(replacement).(common.MixinAttacher); ok {
+			mixinAttacher.AttachMixins()
+		}
+
+		replacement.SetGVK(replacement.GetGVK())
+		replacement.SetDefinition(new(O))
+		replacement.GetDefinition().SetName("replacement")
+
+		return replacement, errOptionFailure
+	}
+
+	return AO(failWithReplacement)
 }
 
 // createSchemeAttacherGVKTest generates a test function that verifies a scheme attacher correctly registers the
