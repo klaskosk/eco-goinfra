@@ -17,7 +17,7 @@ type EmbeddableBuilder[O any, SO ObjectPointer[O]] struct {
 	// err is the error stored in the builder.
 	err error
 	// apiClient is the client used for connecting with the K8s cluster.
-	apiClient runtimeclient.Client
+	apiClient runtimeclient.WithWatch
 	// gvk is the GVK of the resource the builder represents. It is set by [SetGVK] and then returned by all
 	// subsequent [GetGVK] calls.
 	gvk schema.GroupVersionKind
@@ -59,13 +59,13 @@ func (b *EmbeddableBuilder[O, SO]) SetError(err error) {
 }
 
 // GetClient returns the client used for connecting with the K8s cluster.
-func (b *EmbeddableBuilder[O, SO]) GetClient() runtimeclient.Client {
+func (b *EmbeddableBuilder[O, SO]) GetClient() runtimeclient.WithWatch {
 	return b.apiClient
 }
 
 // SetClient updates the client used for connecting with the K8s cluster. End users should not call this method directly
 // since the client is automatically set when the builder is created.
-func (b *EmbeddableBuilder[O, SO]) SetClient(apiClient runtimeclient.Client) {
+func (b *EmbeddableBuilder[O, SO]) SetClient(apiClient runtimeclient.WithWatch) {
 	b.apiClient = apiClient
 }
 

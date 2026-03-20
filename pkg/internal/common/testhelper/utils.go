@@ -134,6 +134,10 @@ func isInvalidBuilder(err error) bool {
 	return errors.Is(err, errInvalidBuilder)
 }
 
+func isContextDeadlineExceeded(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded)
+}
+
 // buildDummyObject creates a minimal Kubernetes object with only name and namespace set. The namespace is always set
 // even for cluster-scoped resources since the Kubernetes API simply ignores it for those types. This avoids needing
 // separate constructors for namespaced vs cluster-scoped test objects.

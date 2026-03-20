@@ -33,7 +33,7 @@ type NamespacedListFunc[SB any] func(
 // GenericListFunc is the signature for the common.List function that takes context, client, and scheme attacher.
 type GenericListFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
 	ctx context.Context,
-	apiClient runtimeclient.Client,
+	apiClient runtimeclient.WithWatch,
 	schemeAttacher clients.SchemeAttacher,
 	options ...runtimeclient.ListOption,
 ) ([]SB, error)
@@ -41,8 +41,8 @@ type GenericListFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPoin
 // internalListFunc is the unified internal function signature used by ListTestConfig. All of the other list functions
 // must be able to be wrapped in this signature.
 //
-// We use the clients.Settings type instead of the runtimeclient.Client type because clients.Settings may be used in
-// place of runtimeclient.Client, but not vice versa.
+// We use the clients.Settings type instead of the runtimeclient.WithWatch type because clients.Settings may be used in
+// place of runtimeclient.WithWatch, but not vice versa.
 type internalListFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
 	ctx context.Context,
 	apiClient *clients.Settings,

@@ -1,7 +1,9 @@
 package common_test
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common"
@@ -103,6 +105,24 @@ func TestDelete(t *testing.T) {
 	testhelper.NewGenericDeleteTestConfig(commonConfig, common.Delete).ExecuteTests(t)
 }
 
+func TestWaitUntilDeleted(t *testing.T) {
+	t.Parallel()
+
+	commonConfig := testhelper.NewCommonTestConfig[corev1.Namespace, mockClusterScopedBuilder](
+		testSchemeAttacher, clusterScopedGVK, testhelper.ResourceScopeClusterScoped)
+
+	testhelper.NewWaitUntilDeletedTestConfig(commonConfig).ExecuteTests(t)
+}
+
+func TestDeleteAndWait(t *testing.T) {
+	t.Parallel()
+
+	commonConfig := testhelper.NewCommonTestConfig[corev1.Namespace, mockClusterScopedBuilder](
+		testSchemeAttacher, clusterScopedGVK, testhelper.ResourceScopeClusterScoped)
+
+	testhelper.NewDeleteAndWaiterTestConfig(commonConfig).ExecuteTests(t)
+}
+
 func TestList(t *testing.T) {
 	t.Parallel()
 
@@ -172,6 +192,16 @@ var _ common.Builder[corev1.Namespace, *corev1.Namespace] = (*mockClusterScopedB
 // GetGVK returns the GVK for the mock cluster-scoped builder.
 func (builder *mockClusterScopedBuilder) GetGVK() schema.GroupVersionKind {
 	return clusterScopedGVK
+}
+
+// WaitUntilDeleted delegates to the common package implementation for tests that exercise the generic helper.
+func (builder *mockClusterScopedBuilder) WaitUntilDeleted(timeout time.Duration) error {
+	return common.WaitUntilDeleted[corev1.Namespace, corev1.NamespaceList](context.TODO(), builder, timeout)
+}
+
+// DeleteAndWait delegates to the common package implementation for tests that exercise the generic helper.
+func (builder *mockClusterScopedBuilder) DeleteAndWait(timeout time.Duration) error {
+	return common.DeleteAndWait[corev1.Namespace, corev1.NamespaceList](context.TODO(), builder, timeout)
 }
 
 // mockNamespacedBuilder implements the Builder interface for testing using a namespaced resource.

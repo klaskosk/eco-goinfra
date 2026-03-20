@@ -20,14 +20,14 @@ type NewNamespacedBuilderFunc[SB any] func(apiClient *clients.Settings, name, ns
 
 // GenericNewClusterScopedBuilderFunc is a generic new builder function signature for cluster-scoped resources.
 type GenericNewClusterScopedBuilderFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
-	apiClient runtimeclient.Client,
+	apiClient runtimeclient.WithWatch,
 	schemeAttacher clients.SchemeAttacher,
 	name string,
 ) SB
 
 // GenericNewNamespacedBuilderFunc is a generic new builder function signature for namespaced resources.
 type GenericNewNamespacedBuilderFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
-	apiClient runtimeclient.Client,
+	apiClient runtimeclient.WithWatch,
 	schemeAttacher clients.SchemeAttacher,
 	name, nsname string,
 ) SB
@@ -36,8 +36,8 @@ type GenericNewNamespacedBuilderFunc[O, B any, SO common.ObjectPointer[O], SB co
 // to make a thin wrapper around every other NewBuilder function to have this signature. This allows for unifying the
 // test cases across the different signatures.
 //
-// We use the clients.Settings type instead of the runtimeclient.Client type because clients.Settings may be used in
-// place of runtimeclient.Client, but not vice versa.
+// We use the clients.Settings type instead of the runtimeclient.WithWatch type because clients.Settings may be used in
+// place of runtimeclient.WithWatch, but not vice versa.
 type internalNewBuilderFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
 	apiClient *clients.Settings,
 	schemeAttacher clients.SchemeAttacher,

@@ -24,7 +24,7 @@ type ClusterScopedPullFunc[SB any] func(apiClient *clients.Settings, name string
 // GenericClusterScopedPullFunc is the signature for the common.PullClusterScopedBuilder function.
 type GenericClusterScopedPullFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
 	ctx context.Context,
-	apiClient runtimeclient.Client,
+	apiClient runtimeclient.WithWatch,
 	schemeAttacher clients.SchemeAttacher,
 	name string,
 ) (SB, error)
@@ -32,7 +32,7 @@ type GenericClusterScopedPullFunc[O, B any, SO common.ObjectPointer[O], SB commo
 // GenericNamespacedPullFunc is the signature for the common.PullNamespacedBuilder function.
 type GenericNamespacedPullFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
 	ctx context.Context,
-	apiClient runtimeclient.Client,
+	apiClient runtimeclient.WithWatch,
 	schemeAttacher clients.SchemeAttacher,
 	name, nsname string,
 ) (SB, error)
@@ -40,8 +40,8 @@ type GenericNamespacedPullFunc[O, B any, SO common.ObjectPointer[O], SB common.B
 // internalPullFunc is the unified internal function signature used by PullTestConfig. All of the other pull functions
 // must be able to be wrapped in this signature.
 //
-// We use the clients.Settings type instead of the runtimeclient.Client type because clients.Settings may be used in
-// place of runtimeclient.Client, but not vice versa.
+// We use the clients.Settings type instead of the runtimeclient.WithWatch type because clients.Settings may be used in
+// place of runtimeclient.WithWatch, but not vice versa.
 type internalPullFunc[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]] func(
 	ctx context.Context,
 	apiClient *clients.Settings,
