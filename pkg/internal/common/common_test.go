@@ -103,6 +103,15 @@ func TestDelete(t *testing.T) {
 	testhelper.NewGenericDeleteTestConfig(commonConfig, common.Delete).ExecuteTests(t)
 }
 
+func TestWithOptions(t *testing.T) {
+	t.Parallel()
+
+	commonConfig := testhelper.NewCommonTestConfig[corev1.Namespace, mockClusterScopedBuilder](
+		testSchemeAttacher, clusterScopedGVK, testhelper.ResourceScopeClusterScoped)
+
+	testhelper.NewWithOptionsTestConfig(commonConfig).ExecuteTests(t)
+}
+
 func TestList(t *testing.T) {
 	t.Parallel()
 
@@ -172,6 +181,13 @@ var _ common.Builder[corev1.Namespace, *corev1.Namespace] = (*mockClusterScopedB
 // GetGVK returns the GVK for the mock cluster-scoped builder.
 func (builder *mockClusterScopedBuilder) GetGVK() schema.GroupVersionKind {
 	return clusterScopedGVK
+}
+
+// WithOptions delegates to the common package implementation for tests that exercise the generic helper.
+func (builder *mockClusterScopedBuilder) WithOptions(
+	options ...func(*mockClusterScopedBuilder) (*mockClusterScopedBuilder, error),
+) *mockClusterScopedBuilder {
+	return common.WithOptions(builder, options...)
 }
 
 // mockNamespacedBuilder implements the Builder interface for testing using a namespaced resource.
