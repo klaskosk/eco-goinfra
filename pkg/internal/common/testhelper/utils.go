@@ -44,6 +44,8 @@ var (
 	// errSchemeAttachment simulates a failure when registering types with the runtime scheme. Used to verify that
 	// builders properly handle scheme registration errors during client setup.
 	errSchemeAttachment = errors.New("scheme attachment failed")
+
+	errOptionFailure = errors.New("simulated option failure")
 )
 
 // testFailingCreate is an interceptor function that always returns errCreateFailure. Used with fake client interceptors
@@ -134,6 +136,10 @@ func isInvalidBuilder(err error) bool {
 	return errors.Is(err, errInvalidBuilder)
 }
 
+func isOptionFailure(err error) bool {
+	return errors.Is(err, errOptionFailure)
+}
+
 // buildDummyObject creates a minimal Kubernetes object with only name and namespace set. The namespace is always set
 // even for cluster-scoped resources since the Kubernetes API simply ignores it for those types. This avoids needing
 // separate constructors for namespaced vs cluster-scoped test objects.
@@ -150,6 +156,28 @@ func buildDummyObject[O any, SO common.ObjectPointer[O]](name, namespace string)
 // propagate scheme registration failures rather than silently continuing with an incomplete scheme.
 func testFailingSchemeAttacher(scheme *runtime.Scheme) error {
 	return errSchemeAttachment
+}
+
+// testAnnotationOption returns an option function that sets a test annotation on the builder.
+func testAnnotationOption[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]]() func(SB) (SB, error) {
+	return func(builder SB) (SB, error) {
+		annotations := builder.GetDefinition().GetAnnotations()
+		if annotations == nil {
+			annotations = make(map[string]string)
+		}
+
+		annotations[testAnnotationKey] = testAnnotationValue
+		builder.GetDefinition().SetAnnotations(annotations)
+
+		return builder, nil
+	}
+}
+
+// testFailingOption returns an option function that always returns an error.
+func testFailingOption[O, B any, SO common.ObjectPointer[O], SB common.BuilderPointer[B, O, SO]]() func(SB) (SB, error) {
+	return func(builder SB) (SB, error) {
+		return builder, errOptionFailure
+	}
 }
 
 // createSchemeAttacherGVKTest generates a test function that verifies a scheme attacher correctly registers the
