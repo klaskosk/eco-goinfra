@@ -1,128 +1,178 @@
 package configmap
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
 func TestList(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
+		name           string
 		nsname         string
-		client         bool
+		withClient     bool
 		configMaps     []runtime.Object
 		configmapCount int
-		expectedError  error
+		expectedError  string
 	}{
 		{
-			nsname: "test-namespace",
-			client: true,
+			name:       "returns configmaps from namespace",
+			nsname:     "test-namespace",
+			withClient: true,
 			configMaps: []runtime.Object{
-				generateConfigMap("test-name1", "test-namespace"),
-				generateConfigMap("test-name2", "test-namespace"),
+				newConfigMapObject("test-name1", "test-namespace"),
+				newConfigMapObject("test-name2", "test-namespace"),
 			},
 			configmapCount: 2,
-			expectedError:  nil,
 		},
 		{
-			nsname: "test-namespace",
-			client: true,
+			name:       "filters configmaps from other namespaces",
+			nsname:     "test-namespace",
+			withClient: true,
 			configMaps: []runtime.Object{
-				generateConfigMap("test-name1", "test-namespace"),
-				generateConfigMap("test-name2", "test-namespace2"),
+				newConfigMapObject("test-name1", "test-namespace"),
+				newConfigMapObject("test-name2", "test-namespace2"),
 			},
 			configmapCount: 1,
-			expectedError:  nil,
 		},
 		{
+			name:          "rejects empty namespace",
 			nsname:        "",
-			client:        true,
-			configMaps:    []runtime.Object{},
-			expectedError: fmt.Errorf("failed to list configmaps, 'nsname' parameter is empty"),
+			withClient:    true,
+			expectedError: "failed to list configmaps, 'nsname' parameter is empty",
 		},
 		{
+			name:          "rejects nil client",
 			nsname:        "test-namespace",
-			client:        false,
-			configMaps:    []runtime.Object{},
-			expectedError: fmt.Errorf("the apiClient cannot be nil"),
+			withClient:    false,
+			expectedError: "the apiClient cannot be nil",
 		},
 	}
 
 	for _, testCase := range testCases {
-		var (
-			testSettings *clients.Settings
-		)
+		testCase := testCase
 
-		if testCase.client {
-			testSettings = clients.GetTestClients(clients.TestClientParams{
-				K8sMockObjects: testCase.configMaps,
-			})
-		}
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-		configmapBuilders, err := List(testSettings, testCase.nsname)
+			var testSettings *clients.Settings
 
-		assert.Equal(t, testCase.expectedError, err)
+			if testCase.withClient {
+				testSettings = clients.GetTestClients(clients.TestClientParams{
+					K8sMockObjects: testCase.configMaps,
+				})
+			}
 
-		if testCase.expectedError == nil {
-			assert.NotNil(t, configmapBuilders)
-			assert.Equal(t, testCase.configmapCount, len(configmapBuilders))
-		}
+			configmapBuilders, err := List(testSettings, testCase.nsname)
+
+			if testCase.expectedError != "" {
+				require.Error(t, err)
+				assert.EqualError(t, err, testCase.expectedError)
+				assert.Nil(t, configmapBuilders)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Len(t, configmapBuilders, testCase.configmapCount)
+
+			for _, builder := range configmapBuilders {
+				require.NotNil(t, builder)
+				require.NotNil(t, builder.GetClient())
+				require.NotNil(t, builder.GetDefinition())
+				require.NotNil(t, builder.GetObject())
+				assert.Equal(t, configMapGVK, builder.GetGVK())
+			}
+		})
 	}
 }
 
 func TestListInAllNamespaces(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
-		client         bool
+		name           string
+		withClient     bool
 		configMaps     []runtime.Object
 		configmapCount int
-		expectedError  error
+		expectedError  string
 	}{
 		{
-			client: true,
+			name:       "returns all configmaps",
+			withClient: true,
 			configMaps: []runtime.Object{
-				generateConfigMap("test-name1", "test-namespace"),
-				generateConfigMap("test-name2", "test-namespace"),
+				newConfigMapObject("test-name1", "test-namespace"),
+				newConfigMapObject("test-name2", "test-namespace"),
 			},
 			configmapCount: 2,
-			expectedError:  nil,
 		},
 		{
-			client: true,
+			name:       "includes multiple namespaces",
+			withClient: true,
 			configMaps: []runtime.Object{
-				generateConfigMap("test-name1", "test-namespace"),
-				generateConfigMap("test-name2", "test-namespace2"),
+				newConfigMapObject("test-name1", "test-namespace"),
+				newConfigMapObject("test-name2", "test-namespace2"),
 			},
 			configmapCount: 2,
-			expectedError:  nil,
 		},
 		{
-			client:        false,
-			configMaps:    []runtime.Object{},
-			expectedError: fmt.Errorf("the apiClient cannot be nil"),
+			name:          "rejects nil client",
+			withClient:    false,
+			expectedError: "the apiClient cannot be nil",
 		},
 	}
 
 	for _, testCase := range testCases {
-		var (
-			testSettings *clients.Settings
-		)
+		testCase := testCase
 
-		if testCase.client {
-			testSettings = clients.GetTestClients(clients.TestClientParams{
-				K8sMockObjects: testCase.configMaps,
-			})
-		}
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-		configmapBuilders, err := ListInAllNamespaces(testSettings)
+			var testSettings *clients.Settings
 
-		assert.Equal(t, testCase.expectedError, err)
+			if testCase.withClient {
+				testSettings = clients.GetTestClients(clients.TestClientParams{
+					K8sMockObjects: testCase.configMaps,
+				})
+			}
 
-		if testCase.expectedError == nil {
-			assert.NotNil(t, configmapBuilders)
-			assert.Equal(t, testCase.configmapCount, len(configmapBuilders))
-		}
+			configmapBuilders, err := ListInAllNamespaces(testSettings)
+
+			if testCase.expectedError != "" {
+				require.Error(t, err)
+				assert.EqualError(t, err, testCase.expectedError)
+				assert.Nil(t, configmapBuilders)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Len(t, configmapBuilders, testCase.configmapCount)
+
+			for _, builder := range configmapBuilders {
+				require.NotNil(t, builder)
+				require.NotNil(t, builder.GetClient())
+				require.NotNil(t, builder.GetDefinition())
+				require.NotNil(t, builder.GetObject())
+				assert.Equal(t, configMapGVK, builder.GetGVK())
+			}
+		})
+	}
+}
+
+// newConfigMapObject returns a ConfigMap runtime object for list tests.
+func newConfigMapObject(name, namespace string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
 	}
 }
