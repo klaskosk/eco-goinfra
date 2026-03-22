@@ -1,384 +1,132 @@
 package configmap
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
+	commonerrors "github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common/errors"
+	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common/testhelper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
+var configMapGVK = corev1.SchemeGroupVersion.WithKind("ConfigMap")
+
 func TestNewBuilder(t *testing.T) {
-	testCases := []struct {
-		name        string
-		nsname      string
-		expectedCM  *corev1.ConfigMap
-		expectedErr string
-	}{
-		{
-			name:   "test",
-			nsname: "testns",
-			expectedCM: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "testns",
-				},
-			},
-			expectedErr: "",
-		},
-		{
-			name:        "",
-			nsname:      "testns",
-			expectedCM:  nil,
-			expectedErr: "configmap 'name' cannot be empty",
-		},
-		{
-			name:        "test",
-			nsname:      "",
-			expectedCM:  nil,
-			expectedErr: "configmap 'nsname' cannot be empty",
-		},
-	}
+	t.Parallel()
 
-	for _, testCase := range testCases {
-		testSettings := clients.GetTestClients(clients.TestClientParams{})
-
-		testBuilder := NewBuilder(testSettings, testCase.name, testCase.nsname)
-
-		if testCase.expectedErr == "" {
-			assert.NotNil(t, testBuilder)
-			assert.Equal(t, testCase.expectedCM.Name, testBuilder.Definition.Name)
-			assert.Equal(t, testCase.expectedCM.Namespace, testBuilder.Definition.Namespace)
-		} else {
-			assert.Equal(t, testCase.expectedErr, testBuilder.errorMsg)
-		}
-	}
+	testhelper.NewNamespacedBuilderTestConfig[corev1.ConfigMap, Builder](NewBuilder, corev1.AddToScheme, configMapGVK).
+		ExecuteTests(t)
 }
 
 func TestPull(t *testing.T) {
-	testCases := []struct {
-		name                string
-		nsname              string
-		expectedError       bool
-		addToRuntimeObjects bool
-		expectedErrorText   string
-	}{
-		{
-			name:                "test",
-			nsname:              "testns",
-			expectedError:       false,
-			addToRuntimeObjects: true,
-		},
-		{
-			name:                "",
-			nsname:              "testns",
-			expectedError:       true,
-			addToRuntimeObjects: false,
-			expectedErrorText:   "configmap 'name' cannot be empty",
-		},
-		{
-			name:                "test",
-			nsname:              "",
-			expectedError:       true,
-			addToRuntimeObjects: false,
-			expectedErrorText:   "configmap 'nsname' cannot be empty",
-		},
-		{
-			name:                "test",
-			nsname:              "testns",
-			expectedError:       true,
-			addToRuntimeObjects: false,
-			expectedErrorText:   "configmap object test does not exist in namespace testns",
-		},
-	}
+	t.Parallel()
 
-	for _, testCase := range testCases {
-		var (
-			runtimeObjects []runtime.Object
-			testSettings   *clients.Settings
-		)
-
-		testCM := generateConfigMap(testCase.name, testCase.nsname)
-
-		if testCase.addToRuntimeObjects {
-			runtimeObjects = append(runtimeObjects, testCM)
-		}
-
-		testSettings = clients.GetTestClients(clients.TestClientParams{
-			K8sMockObjects: runtimeObjects,
-		})
-
-		// Test the Pull function
-		builderResult, err := Pull(testSettings, testCase.name, testCase.nsname)
-
-		// Check the error
-		if testCase.expectedError {
-			assert.NotNil(t, err)
-
-			if testCase.expectedErrorText != "" {
-				assert.Equal(t, testCase.expectedErrorText, err.Error())
-			}
-		} else {
-			assert.Nil(t, err)
-			assert.NotNil(t, builderResult)
-			assert.Equal(t, testCase.name, builderResult.Definition.Name)
-			assert.Equal(t, testCase.nsname, builderResult.Definition.Namespace)
-		}
-	}
+	testhelper.NewNamespacedPullTestConfig[corev1.ConfigMap, Builder](Pull, corev1.AddToScheme, configMapGVK).
+		ExecuteTests(t)
 }
 
-func TestCreate(t *testing.T) {
-	testCases := []struct {
-		addToRuntimeObjects bool
-	}{
-		{
-			addToRuntimeObjects: true,
-		},
-		{
-			addToRuntimeObjects: false,
-		},
-	}
+func TestBuilderMethods(t *testing.T) {
+	t.Parallel()
 
-	for _, testCase := range testCases {
-		var (
-			runtimeObjects []runtime.Object
-		)
+	commonConfig := newConfigMapCommonTestConfig()
 
-		testCM := generateConfigMap("test-name", "test-namespace")
-
-		if testCase.addToRuntimeObjects {
-			runtimeObjects = append(runtimeObjects, testCM)
-		}
-
-		testBuilder := buildTestBuilderWithFakeObjects(runtimeObjects)
-
-		// Test the Create function
-		builderResult, err := testBuilder.Create()
-		assert.Nil(t, err)
-		assert.NotNil(t, builderResult)
-		assert.Equal(t, "test-name", builderResult.Definition.Name)
-		assert.Equal(t, "test-namespace", builderResult.Definition.Namespace)
-	}
+	testhelper.NewTestSuite().
+		With(testhelper.NewGetTestConfig(commonConfig)).
+		With(testhelper.NewExistsTestConfig(commonConfig)).
+		With(testhelper.NewCreateTestConfig(commonConfig)).
+		With(testhelper.NewDeleterTestConfig(commonConfig)).
+		With(testhelper.NewUpdateTestConfig(commonConfig)).
+		Run(t)
 }
 
-func TestDelete(t *testing.T) {
-	testCases := []struct {
-		addToRuntimeObjects bool
-	}{
-		{
-			addToRuntimeObjects: true,
-		},
-		{
-			addToRuntimeObjects: false,
-		},
-	}
+func TestWithOptions(t *testing.T) {
+	t.Parallel()
 
-	for _, testCase := range testCases {
-		var (
-			runtimeObjects []runtime.Object
-		)
-
-		testCM := generateConfigMap("test-name", "test-namespace")
-
-		if testCase.addToRuntimeObjects {
-			runtimeObjects = append(runtimeObjects, testCM)
-		}
-
-		testBuilder := buildTestBuilderWithFakeObjects(runtimeObjects)
-
-		// Test the Delete function
-		err := testBuilder.Delete()
-		assert.Nil(t, err)
-	}
+	testhelper.NewWithOptionsTestConfig(newConfigMapCommonTestConfig()).ExecuteTests(t)
 }
 
-func TestUpdate(t *testing.T) {
-	generateTestConfigMap := func() *corev1.ConfigMap {
-		return &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-name",
-				Namespace: "test-namespace",
+func TestWithData(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name          string
+		builder       func() *Builder
+		data          map[string]string
+		assertError   func(error) bool
+		expectedData  map[string]string
+		expectDataNil bool
+	}{
+		{
+			name: "sets data on valid builder",
+			builder: func() *Builder {
+				return NewBuilder(newConfigMapTestClient(), "test-name", "test-namespace")
 			},
-		}
-	}
-
-	testCases := []struct {
-		configMapExistsAlready bool
-	}{
-		{
-			configMapExistsAlready: false,
+			data:         map[string]string{"key": "value"},
+			assertError:  func(err error) bool { return err == nil },
+			expectedData: map[string]string{"key": "value"},
 		},
 		{
-			configMapExistsAlready: true,
+			name: "empty data sets builder error",
+			builder: func() *Builder {
+				return NewBuilder(newConfigMapTestClient(), "test-name", "test-namespace")
+			},
+			data:          map[string]string{},
+			assertError:   func(err error) bool { return err != nil && err.Error() == "'data' cannot be empty" },
+			expectDataNil: true,
+		},
+		{
+			name: "invalid builder short circuits",
+			builder: func() *Builder {
+				return NewBuilder(newConfigMapTestClient(), "", "test-namespace")
+			},
+			data:          map[string]string{"key": "value"},
+			assertError:   commonerrors.IsBuilderNameEmpty,
+			expectDataNil: true,
 		},
 	}
 
 	for _, testCase := range testCases {
-		var runtimeObjects []runtime.Object
+		testCase := testCase
 
-		if testCase.configMapExistsAlready {
-			runtimeObjects = append(runtimeObjects, generateTestConfigMap())
-		}
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-		testBuilder := buildTestBuilderWithFakeObjects(runtimeObjects)
+			builder := testCase.builder()
+			require.NotNil(t, builder)
 
-		// Assert the deployment before the update
-		assert.NotNil(t, testBuilder.Definition)
-		assert.Nil(t, testBuilder.Definition.Data)
+			result := builder.WithData(testCase.data)
+			require.Same(t, builder, result)
+			require.Truef(t, testCase.assertError(result.GetError()), "unexpected error: %v", result.GetError())
 
-		// Set a value in the definition to test the update
-		testBuilder.Definition.Data = map[string]string{"key1": "value1", "key2": "value2"}
-
-		// Perform the update
-		result, err := testBuilder.Update()
-
-		// Assert the result
-		assert.NotNil(t, testBuilder.Definition)
-
-		if !testCase.configMapExistsAlready {
-			assert.NotNil(t, err)
-		} else {
-			assert.Nil(t, err)
-			assert.Equal(t, testBuilder.Definition.Name, result.Definition.Name)
-			assert.Equal(t, testBuilder.Definition.Data, result.Definition.Data)
-		}
+			if testCase.expectDataNil {
+				assert.Nil(t, result.Definition.Data)
+			} else {
+				assert.Equal(t, testCase.expectedData, result.Definition.Data)
+			}
+		})
 	}
 }
 
 func TestGetGVR(t *testing.T) {
+	t.Parallel()
+
 	testGVR := GetGVR()
 	assert.Equal(t, "configmaps", testGVR.Resource)
 	assert.Equal(t, "v1", testGVR.Version)
 	assert.Equal(t, "", testGVR.Group)
 }
 
-func TestValidate(t *testing.T) {
-	testCases := []struct {
-		builderNil    bool
-		definitionNil bool
-		apiClientNil  bool
-		expectedError string
-	}{
-		{
-			builderNil:    true,
-			definitionNil: false,
-			apiClientNil:  false,
-			expectedError: "error: received nil ConfigMap builder",
-		},
-		{
-			builderNil:    false,
-			definitionNil: true,
-			apiClientNil:  false,
-			expectedError: "can not redefine the undefined ConfigMap",
-		},
-		{
-			builderNil:    false,
-			definitionNil: false,
-			apiClientNil:  true,
-			expectedError: "ConfigMap builder cannot have nil apiClient",
-		},
-		{
-			builderNil:    false,
-			definitionNil: false,
-			apiClientNil:  false,
-			expectedError: "",
-		},
-	}
-
-	for _, testCase := range testCases {
-		testBuilder := buildTestBuilderWithFakeObjects([]runtime.Object{})
-
-		if testCase.builderNil {
-			testBuilder = nil
-		}
-
-		if testCase.definitionNil {
-			testBuilder.Definition = nil
-		}
-
-		if testCase.apiClientNil {
-			testBuilder.apiClient = nil
-		}
-
-		result, err := testBuilder.validate()
-		if testCase.expectedError != "" {
-			assert.NotNil(t, err)
-			assert.Equal(t, testCase.expectedError, err.Error())
-			assert.False(t, result)
-		} else {
-			assert.Nil(t, err)
-			assert.True(t, result)
-		}
-	}
+// newConfigMapCommonTestConfig returns the shared testhelper configuration for configmap builder tests.
+func newConfigMapCommonTestConfig() testhelper.CommonTestConfig[corev1.ConfigMap, Builder, *corev1.ConfigMap, *Builder] {
+	return testhelper.NewCommonTestConfig[corev1.ConfigMap, Builder](
+		corev1.AddToScheme, configMapGVK, testhelper.ResourceScopeNamespaced)
 }
 
-func TestWithOptions(t *testing.T) {
-	testBuilder := buildTestBuilderWithFakeObjects([]runtime.Object{})
-
-	testBuilder.WithOptions(func(builder *Builder) (*Builder, error) {
-		return builder, nil
+// newConfigMapTestClient returns a fake client configured with the ConfigMap scheme.
+func newConfigMapTestClient() *clients.Settings {
+	return clients.GetTestClients(clients.TestClientParams{
+		SchemeAttachers: []clients.SchemeAttacher{corev1.AddToScheme},
 	})
-
-	assert.Equal(t, "", testBuilder.errorMsg)
-
-	testBuilder.WithOptions(func(builder *Builder) (*Builder, error) {
-		return builder, errors.New("error")
-	})
-
-	assert.Equal(t, "error", testBuilder.errorMsg)
-}
-
-func TestWithData(t *testing.T) {
-	testCases := []struct {
-		key         string
-		value       string
-		expectedErr string
-	}{
-		{
-			key:         "key",
-			value:       "value",
-			expectedErr: "",
-		},
-		{
-			key:         "",
-			value:       "",
-			expectedErr: "'data' cannot be empty",
-		},
-	}
-
-	for _, testCase := range testCases {
-		testBuilder := buildTestBuilderWithFakeObjects([]runtime.Object{})
-
-		if testCase.expectedErr == "" {
-			testBuilder.WithData(map[string]string{testCase.key: testCase.value})
-
-			assert.Equal(t, testCase.value, testBuilder.Definition.Data[testCase.key])
-		} else {
-			testBuilder.WithData(map[string]string{})
-
-			assert.Equal(t, testCase.expectedErr, testBuilder.errorMsg)
-		}
-	}
-}
-
-func buildTestBuilderWithFakeObjects(objects []runtime.Object) *Builder {
-	fakeClient := k8sfake.NewSimpleClientset(objects...)
-
-	return NewBuilder(&clients.Settings{
-		CoreV1Interface: fakeClient.CoreV1(),
-		K8sClient:       fakeClient,
-	}, "test-name", "test-namespace")
-}
-
-func generateConfigMap(name, nsname string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: nsname,
-		},
-	}
 }
