@@ -5,228 +5,248 @@ import (
 	"testing"
 
 	routev1 "github.com/openshift/api/route/v1"
-	"github.com/stretchr/testify/assert"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
+	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common/testhelper"
+	"github.com/stretchr/testify/assert"
 )
 
-func TestNewBuilder(t *testing.T) {
-	testcases := []struct {
-		name           string
-		namespace      string
-		targetService  string
-		expectedErrMsg string
-	}{
-		{
-			name:           "route-test-name",
-			namespace:      "route-test-namespace",
-			targetService:  "route-test-service",
-			expectedErrMsg: "",
-		},
-		{
-			name:           "",
-			namespace:      "route-test-namespace",
-			targetService:  "route-test-service",
-			expectedErrMsg: "route 'name' cannot be empty",
-		},
-		{
-			name:           "route-test-name",
-			namespace:      "",
-			targetService:  "route-test-service",
-			expectedErrMsg: "route 'nsname' cannot be empty",
-		},
-		{
-			name:           "route-test-name",
-			namespace:      "route-test-namespace",
-			targetService:  "",
-			expectedErrMsg: "route 'serviceName' cannot be empty",
-		},
-	}
+func Test_Builder_Pull(t *testing.T) {
+	t.Parallel()
 
-	for _, test := range testcases {
-		testBuilder := NewBuilder(clients.GetTestClients(clients.TestClientParams{}),
-			test.name, test.namespace, test.targetService)
-		assert.Equal(t, test.expectedErrMsg, testBuilder.errorMsg)
-	}
+	testhelper.NewNamespacedPullTestConfig(
+		Pull,
+		routev1.AddToScheme,
+		routev1.GroupVersion.WithKind("Route"),
+	).ExecuteTests(t)
 }
 
-func TestPull(t *testing.T) {
-	generateRoute := func(name, namespace string) *routev1.Route {
-		return &routev1.Route{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: namespace,
+func Test_Builder_Methods(t *testing.T) {
+	t.Parallel()
+
+	commonTestConfig := testhelper.NewCommonTestConfig[routev1.Route, Builder](
+		routev1.AddToScheme,
+		routev1.GroupVersion.WithKind("Route"),
+		testhelper.ResourceScopeNamespaced,
+	)
+
+	testhelper.NewTestSuite().
+		With(testhelper.NewGetTestConfig(commonTestConfig)).
+		With(testhelper.NewExistsTestConfig(commonTestConfig)).
+		With(testhelper.NewCreateTestConfig(commonTestConfig)).
+		With(testhelper.NewDeleteReturnerTestConfig(commonTestConfig)).
+		Run(t)
+}
+
+func TestNewBuilder(t *testing.T) {
+	t.Parallel()
+
+	t.Run("common namespaced builder behavior", func(t *testing.T) {
+		t.Parallel()
+
+		testhelper.NewNamespacedBuilderTestConfig(
+			func(apiClient *clients.Settings, name, nsname string) *Builder {
+				return NewBuilder(apiClient, name, nsname, "route-test-service")
 			},
-			Spec: routev1.RouteSpec{
-				To: routev1.RouteTargetReference{
-					Kind: "Service",
-					Name: "route-test-service",
-				},
-			},
-		}
-	}
+			routev1.AddToScheme,
+			routev1.GroupVersion.WithKind("Route"),
+		).ExecuteTests(t)
+	})
 
 	testCases := []struct {
-		name                string
-		namespace           string
-		expectedError       bool
-		addToRuntimeObjects bool
-		expectedErrorText   string
+		name          string
+		targetService string
+		expectedError error
 	}{
 		{
-			name:                "route-test-name",
-			namespace:           "test-namespace",
-			addToRuntimeObjects: true,
-			expectedError:       false,
-			expectedErrorText:   "",
+			name:          "valid service name sets target reference",
+			targetService: "route-test-service",
+			expectedError: nil,
 		},
 		{
-			name:                "route-test-name2",
-			namespace:           "test-namespace2",
-			addToRuntimeObjects: false,
-			expectedError:       true,
-			expectedErrorText:   "route object route-test-name2 does not exist in namespace test-namespace2",
-		},
-		{
-			name:                "",
-			namespace:           "test-namespace3",
-			addToRuntimeObjects: false,
-			expectedError:       true,
-			expectedErrorText:   "route 'name' cannot be empty",
-		},
-		{
-			name:                "route-test-name4",
-			namespace:           "",
-			addToRuntimeObjects: false,
-			expectedError:       true,
-			expectedErrorText:   "route 'namespace' cannot be empty",
+			name:          "empty service name returns error",
+			targetService: "",
+			expectedError: fmt.Errorf("route 'serviceName' cannot be empty"),
 		},
 	}
 
 	for _, testCase := range testCases {
-		// Pre-populate the runtime objects
-		var runtimeObjects []runtime.Object
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-		var testSettings *clients.Settings
+			testBuilder := NewBuilder(
+				clients.GetTestClients(clients.TestClientParams{}),
+				"route-test-name",
+				"route-test-namespace",
+				testCase.targetService,
+			)
 
-		testRoute := generateRoute(testCase.name, testCase.namespace)
+			err := testBuilder.GetError()
+			assert.Equal(t, testCase.expectedError, err)
 
-		if testCase.addToRuntimeObjects {
-			runtimeObjects = append(runtimeObjects, testRoute)
-		}
-
-		testSettings = clients.GetTestClients(clients.TestClientParams{
-			K8sMockObjects: runtimeObjects,
-		})
-
-		// Test the Pull method
-		builderResult, err := Pull(testSettings, testCase.name, testCase.namespace)
-
-		// Check the error
-		if testCase.expectedError {
-			assert.NotNil(t, err)
-
-			// Check the error message
-			if testCase.expectedErrorText != "" {
-				assert.Equal(t, testCase.expectedErrorText, err.Error())
+			if testCase.expectedError == nil {
+				assert.Equal(t, testCase.targetService, testBuilder.Definition.Spec.To.Name)
+				assert.Equal(t, "Service", testBuilder.Definition.Spec.To.Kind)
 			}
-		} else {
-			assert.Nil(t, err)
-			assert.Equal(t, testCase.name, builderResult.Object.Name)
-			assert.Equal(t, testCase.namespace, builderResult.Object.Namespace)
-		}
+		})
 	}
-}
-
-// buildValidTestBuilder returns a valid Builder for testing purposes.
-func buildValidTestBuilder() *Builder {
-	return NewBuilder(clients.GetTestClients(clients.TestClientParams{}),
-		"route-test-name", "route-test-namespace", "route-test-service")
 }
 
 func TestWithTargetPortNumber(t *testing.T) {
-	testBuilder := buildValidTestBuilder()
+	t.Parallel()
 
-	testBuilder.WithTargetPortNumber(8080)
+	t.Run("valid builder sets target port by number", func(t *testing.T) {
+		t.Parallel()
 
-	assert.Equal(t, int32(8080), testBuilder.Definition.Spec.Port.TargetPort.IntVal)
+		testBuilder := buildValidRouteTestBuilder(getTestRouteAPIClient())
+		testBuilder.WithTargetPortNumber(8080)
+
+		assert.NoError(t, testBuilder.GetError())
+		assert.Equal(t, int32(8080), testBuilder.Definition.Spec.Port.TargetPort.IntVal)
+	})
+
+	t.Run("builder with error short-circuits without setting port", func(t *testing.T) {
+		t.Parallel()
+
+		testBuilder := buildInvalidRouteTestBuilder(getTestRouteAPIClient())
+		testBuilder.WithTargetPortNumber(8080)
+
+		assert.Equal(t, fmt.Errorf("route 'serviceName' cannot be empty"), testBuilder.GetError())
+		assert.Nil(t, testBuilder.Definition.Spec.Port)
+	})
 }
 
 func TestWithTargetPortName(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
-		name           string
-		expectedErrMsg string
+		name          string
+		portName      string
+		expectedError error
 	}{
 		{
-			"",
-			"route target port name cannot be empty string",
+			name:          "empty port name returns error",
+			portName:      "",
+			expectedError: fmt.Errorf("route target port name cannot be empty string"),
 		},
 		{
-			"8080-target",
-			"",
+			name:          "non-empty port name sets target reference",
+			portName:      "8080-target",
+			expectedError: nil,
 		},
 	}
 
-	for _, test := range testCases {
-		testBuilder := buildValidTestBuilder()
-		testBuilder.WithTargetPortName(test.name)
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-		assert.Equal(t, test.expectedErrMsg, testBuilder.errorMsg)
+			testBuilder := buildValidRouteTestBuilder(getTestRouteAPIClient())
+			testBuilder.WithTargetPortName(testCase.portName)
+
+			err := testBuilder.GetError()
+			assert.Equal(t, testCase.expectedError, err)
+
+			if testCase.expectedError == nil {
+				assert.Equal(t, testCase.portName, testBuilder.Definition.Spec.Port.TargetPort.StrVal)
+			}
+		})
 	}
 }
 
 func TestWithHostDomain(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
-		hostDomain     string
-		expectedErrMsg string
+		name          string
+		hostDomain    string
+		expectedError error
 	}{
 		{
-			"",
-			"route host domain cannot be empty string",
+			name:          "empty host domain returns error",
+			hostDomain:    "",
+			expectedError: fmt.Errorf("route host domain cannot be empty string"),
 		},
 		{
-			"app.demo-server.dummy.domain.com",
-			"",
+			name:          "non-empty host domain sets spec host",
+			hostDomain:    "app.demo-server.dummy.domain.com",
+			expectedError: nil,
 		},
 	}
 
-	for _, test := range testCases {
-		testBuilder := buildValidTestBuilder()
-		testBuilder.WithHostDomain(test.hostDomain)
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-		assert.Equal(t, test.expectedErrMsg, testBuilder.errorMsg)
+			testBuilder := buildValidRouteTestBuilder(getTestRouteAPIClient())
+			testBuilder.WithHostDomain(testCase.hostDomain)
+
+			err := testBuilder.GetError()
+			assert.Equal(t, testCase.expectedError, err)
+
+			if testCase.expectedError == nil {
+				assert.Equal(t, testCase.hostDomain, testBuilder.Definition.Spec.Host)
+			}
+		})
 	}
 }
 
 func TestWithWildCardPolicy(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
-		policy         string
-		expectedErrMsg string
+		name          string
+		policy        string
+		expectedError error
 	}{
 		{
-			"",
-			fmt.Sprintf("received unsupported route wildcardPolicy: supported policies %v", supportedWildCardPolicies()),
+			name:          "empty policy is unsupported",
+			policy:        "",
+			expectedError: getUnsupportedWildCardPoliciesError(),
 		},
 		{
-			"Any",
-			fmt.Sprintf("received unsupported route wildcardPolicy: supported policies %v", supportedWildCardPolicies()),
+			name:          "Any policy is unsupported",
+			policy:        "Any",
+			expectedError: getUnsupportedWildCardPoliciesError(),
 		},
 		{
-			"Subdomain",
-			"",
+			name:          "Subdomain policy is supported",
+			policy:        "Subdomain",
+			expectedError: nil,
 		},
 		{
-			"None",
-			"",
+			name:          "None policy is supported",
+			policy:        "None",
+			expectedError: nil,
 		},
 	}
 
-	for _, test := range testCases {
-		testBuilder := buildValidTestBuilder()
-		testBuilder.WithWildCardPolicy(test.policy)
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-		assert.Equal(t, test.expectedErrMsg, testBuilder.errorMsg)
+			testBuilder := buildValidRouteTestBuilder(getTestRouteAPIClient())
+			testBuilder.WithWildCardPolicy(testCase.policy)
+
+			err := testBuilder.GetError()
+			assert.Equal(t, testCase.expectedError, err)
+
+			if testCase.expectedError == nil {
+				assert.Equal(t, routev1.WildcardPolicyType(testCase.policy), testBuilder.Definition.Spec.WildcardPolicy)
+			}
+		})
 	}
+}
+
+// getTestRouteAPIClient returns a test client for the Route resource. It has no mock objects.
+func getTestRouteAPIClient() *clients.Settings {
+	return clients.GetTestClients(clients.TestClientParams{})
+}
+
+// buildValidRouteTestBuilder returns a valid Builder for testing purposes.
+func buildValidRouteTestBuilder(apiClient *clients.Settings) *Builder {
+	return NewBuilder(apiClient, "route-test-name", "route-test-namespace", "route-test-service")
+}
+
+// buildInvalidRouteTestBuilder returns a Builder that is already in an error state (empty service name).
+func buildInvalidRouteTestBuilder(apiClient *clients.Settings) *Builder {
+	return NewBuilder(apiClient, "route-test-name", "route-test-namespace", "")
 }
