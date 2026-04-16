@@ -8,6 +8,7 @@ import (
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common/errors"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common/key"
+	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/logging"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -329,7 +330,7 @@ func Get[O any, SO ObjectPointer[O]](ctx context.Context, builder Builder[O, SO]
 
 	var object SO = new(O)
 
-	err := builder.GetClient().Get(ctx, runtimeclient.ObjectKeyFromObject(builder.GetDefinition()), object)
+	err := builder.GetClient().Get(logging.WithDiscardLogger(ctx), runtimeclient.ObjectKeyFromObject(builder.GetDefinition()), object)
 	if err != nil {
 		return nil, errors.NewAPICallFailed("get", key, err)
 	}
@@ -373,7 +374,7 @@ func Delete[O any, SO ObjectPointer[O]](ctx context.Context, builder Builder[O, 
 
 	klog.V(100).Infof("Deleting %s", key.String())
 
-	err := builder.GetClient().Delete(ctx, builder.GetDefinition())
+	err := builder.GetClient().Delete(logging.WithDiscardLogger(ctx), builder.GetDefinition())
 	if err == nil || k8serrors.IsNotFound(err) {
 		builder.SetObject(nil)
 
@@ -411,7 +412,7 @@ func Update[O any, SO ObjectPointer[O]](ctx context.Context, builder Builder[O, 
 
 	builder.GetDefinition().SetResourceVersion(latestObject.GetResourceVersion())
 
-	err = builder.GetClient().Update(ctx, builder.GetDefinition())
+	err = builder.GetClient().Update(logging.WithDiscardLogger(ctx), builder.GetDefinition())
 	if err == nil {
 		builder.SetObject(builder.GetDefinition())
 
@@ -454,7 +455,7 @@ func Create[O any, SO ObjectPointer[O]](ctx context.Context, builder Builder[O, 
 	// Create requests will be rejected if the resource version is set, so we clear it.
 	builder.GetDefinition().SetResourceVersion("")
 
-	err := builder.GetClient().Create(ctx, builder.GetDefinition())
+	err := builder.GetClient().Create(logging.WithDiscardLogger(ctx), builder.GetDefinition())
 	if err == nil {
 		builder.SetObject(builder.GetDefinition())
 
@@ -541,7 +542,7 @@ func List[O, L, B any, SO ObjectPointer[O], SL ListPointer[L], SB BuilderPointer
 
 	var list SL = new(L)
 
-	err = apiClient.List(ctx, list, options...)
+	err = apiClient.List(logging.WithDiscardLogger(ctx), list, options...)
 	if err != nil {
 		klog.V(100).Infof("Failed to list %s: %v", resourceKey.String(), err)
 
