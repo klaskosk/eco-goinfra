@@ -32,10 +32,6 @@ var (
 		Reason: inventoryv1alpha1.ReasonReady,
 	}
 
-	inventoryTestSchemes = []clients.SchemeAttacher{
-		inventoryv1alpha1.AddToScheme,
-	}
-
 	errOCloudSiteNameEmpty = commonerrors.NewBuilderFieldEmpty(
 		key.NewResourceKey("OCloudSite", "", testOCloudSiteNamespace),
 		commonerrors.BuilderFieldName,

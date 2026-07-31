@@ -20,7 +20,6 @@ import (
 const (
 	testResourcePoolName      = "test-resourcepool"
 	testResourcePoolNamespace = "test-namespace"
-	testOCloudSiteName        = "test-ocloudsite"
 )
 
 var resourcePoolGVK = inventoryv1alpha1.GroupVersion.WithKind("ResourcePool")
@@ -30,10 +29,6 @@ var (
 		Type:   inventoryv1alpha1.ConditionTypeReady,
 		Status: metav1.ConditionTrue,
 		Reason: inventoryv1alpha1.ReasonReady,
-	}
-
-	inventoryTestSchemes = []clients.SchemeAttacher{
-		inventoryv1alpha1.AddToScheme,
 	}
 
 	errResourcePoolNameEmpty = commonerrors.NewBuilderFieldEmpty(
