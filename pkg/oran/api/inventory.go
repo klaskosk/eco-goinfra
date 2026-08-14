@@ -46,6 +46,35 @@ const (
 	InventoryChangeNotificationEventTypeDelete InventoryChangeNotificationEventType = inventory.N2
 )
 
+// ResourceTypeResourceClass is the type of the resourceClass field returned by the API.
+type ResourceTypeResourceClass = inventory.ResourceTypeResourceClass
+
+//nolint:revive // These are just re-exported constants no need for the linting.
+const (
+	ResourceTypeResourceClassCOMPUTE    ResourceTypeResourceClass = inventory.ResourceTypeResourceClassCOMPUTE
+	ResourceTypeResourceClassNETWORKING ResourceTypeResourceClass = inventory.ResourceTypeResourceClassNETWORKING
+	ResourceTypeResourceClassSTORAGE    ResourceTypeResourceClass = inventory.ResourceTypeResourceClassSTORAGE
+	ResourceTypeResourceClassUNDEFINED  ResourceTypeResourceClass = inventory.ResourceTypeResourceClassUNDEFINED
+)
+
+// ResourceTypeResourceKind is the type of the resourceKind field returned by the API.
+type ResourceTypeResourceKind = inventory.ResourceTypeResourceKind
+
+//nolint:revive // These are just re-exported constants no need for the linting.
+const (
+	ResourceTypeResourceKindLOGICAL   ResourceTypeResourceKind = inventory.ResourceTypeResourceKindLOGICAL
+	ResourceTypeResourceKindPHYSICAL  ResourceTypeResourceKind = inventory.ResourceTypeResourceKindPHYSICAL
+	ResourceTypeResourceKindUNDEFINED ResourceTypeResourceKind = inventory.ResourceTypeResourceKindUNDEFINED
+)
+
+// LocationInfoCoordinateType is the type of the coordinate type field returned by the API.
+type LocationInfoCoordinateType = inventory.LocationInfoCoordinateType
+
+//nolint:revive // These are just re-exported constants no need for the linting.
+const (
+	LocationInfoCoordinateTypePoint LocationInfoCoordinateType = inventory.Point
+)
+
 // InventoryClient provides access to the O2IMS infrastructure inventory API. It is not a runtimeclient.Client since
 // inventory resources do not correspond to CRs.
 type InventoryClient struct {
