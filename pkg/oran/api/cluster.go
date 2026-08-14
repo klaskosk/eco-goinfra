@@ -6,15 +6,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/oran/api/internal/cluster"
-	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/oran/api/internal/common"
 	"k8s.io/klog/v2"
 )
-
-// APIVersions is the type of the APIVersions resource returned by the API.
-type APIVersions = common.APIVersions
-
-// AlarmDictionary is the type of the AlarmDictionary resource returned by the API.
-type AlarmDictionary = common.AlarmDictionary
 
 // NodeClusterType is the type of the NodeClusterType resource returned by the API.
 type NodeClusterType = cluster.NodeClusterType
