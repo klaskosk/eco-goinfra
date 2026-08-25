@@ -2,6 +2,7 @@ package oran
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -13,8 +14,11 @@ import (
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/internal/common/testhelper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 const (
@@ -74,29 +78,70 @@ func TestListLocations(t *testing.T) {
 func TestListReadyLocations(t *testing.T) {
 	t.Parallel()
 
-	const (
-		readyLocationName    = "ready-location"
-		notReadyLocationName = "not-ready-location"
-	)
+	testCases := []struct {
+		name             string
+		mockObjects      []runtime.Object
+		interceptorFuncs interceptor.Funcs
+		assertError      func(error) bool
+		expectedCount    int
+		expectedName     string
+	}{
+		{
+			name: "filters ready locations",
+			mockObjects: func() []runtime.Object {
+				readyLocation := buildDummyLocation("ready-location", testLocationNamespace)
+				readyLocation.Status.Conditions = append(readyLocation.Status.Conditions, defaultLocationCondition)
 
-	readyLocation := buildDummyLocation(readyLocationName, testLocationNamespace)
-	readyLocation.Status.Conditions = append(readyLocation.Status.Conditions, defaultLocationCondition)
-
-	notReadyLocation := buildDummyLocation(notReadyLocationName, testLocationNamespace)
-
-	testSettings := clients.GetTestClients(clients.TestClientParams{
-		K8sMockObjects: []runtime.Object{
-			readyLocation,
-			notReadyLocation,
+				return []runtime.Object{
+					readyLocation,
+					buildDummyLocation("not-ready-location", testLocationNamespace),
+				}
+			}(),
+			assertError: func(err error) bool {
+				return err == nil
+			},
+			expectedCount: 1,
+			expectedName:  "ready-location",
 		},
-		SchemeAttachers: inventoryTestSchemes,
-	})
+		{
+			name: "list failure returns error",
+			interceptorFuncs: interceptor.Funcs{
+				List: func(
+					_ context.Context,
+					_ runtimeclient.WithWatch,
+					_ runtimeclient.ObjectList,
+					_ ...runtimeclient.ListOption,
+				) error {
+					return errors.New("simulated list failure")
+				},
+			},
+			assertError: func(err error) bool {
+				return commonerrors.IsAPICallFailedWithVerb(err, "list")
+			},
+			expectedCount: 0,
+		},
+	}
 
-	locations, err := ListReadyLocations(testSettings)
-	require.NoError(t, err)
-	require.Len(t, locations, 1)
-	assert.Equal(t, readyLocationName, locations[0].Definition.Name)
-	assert.Equal(t, testLocationNamespace, locations[0].Definition.Namespace)
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			testSettings := clients.GetTestClients(clients.TestClientParams{
+				K8sMockObjects:   testCase.mockObjects,
+				SchemeAttachers:  inventoryTestSchemes,
+				InterceptorFuncs: testCase.interceptorFuncs,
+			})
+
+			locations, err := ListReadyLocations(testSettings)
+			require.True(t, testCase.assertError(err), "unexpected error: %v", err)
+			require.Len(t, locations, testCase.expectedCount)
+
+			if testCase.expectedCount > 0 {
+				assert.Equal(t, testCase.expectedName, locations[0].Definition.Name)
+				assert.Equal(t, testLocationNamespace, locations[0].Definition.Namespace)
+			}
+		})
+	}
 }
 
 func TestLocationMethods(t *testing.T) {
@@ -314,28 +359,40 @@ func TestLocationWaitForCondition(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name          string
-		conditionMet  bool
-		exists        bool
-		expectedError error
+		name         string
+		conditionMet bool
+		exists       bool
+		valid        bool
+		assertError  func(error) bool
 	}{
 		{
-			name:          "condition met",
-			conditionMet:  true,
-			exists:        true,
-			expectedError: nil,
+			name:         "condition met",
+			conditionMet: true,
+			exists:       true,
+			valid:        true,
+			assertError:  func(err error) bool { return err == nil },
 		},
 		{
-			name:          "condition not met",
-			conditionMet:  false,
-			exists:        true,
-			expectedError: context.DeadlineExceeded,
+			name:         "condition not met",
+			conditionMet: false,
+			exists:       true,
+			valid:        true,
+			assertError:  func(err error) bool { return errors.Is(err, context.DeadlineExceeded) },
 		},
 		{
-			name:          "location does not exist",
-			conditionMet:  true,
-			exists:        false,
-			expectedError: fmt.Errorf("cannot wait for non-existent Location"),
+			name:         "location does not exist",
+			conditionMet: true,
+			exists:       false,
+			valid:        true,
+			assertError: func(err error) bool {
+				return err != nil && k8serrors.IsNotFound(err)
+			},
+		},
+		{
+			name:        "invalid builder",
+			exists:      true,
+			valid:       false,
+			assertError: commonerrors.IsBuilderNameEmpty,
 		},
 	}
 
@@ -358,14 +415,21 @@ func TestLocationWaitForCondition(t *testing.T) {
 				K8sMockObjects:  runtimeObjects,
 				SchemeAttachers: inventoryTestSchemes,
 			})
-			testBuilder := newValidLocationBuilder(testSettings)
+
+			var testBuilder *LocationBuilder
+			if testCase.valid {
+				testBuilder = newValidLocationBuilder(testSettings)
+			} else {
+				testBuilder = newInvalidLocationBuilder(testSettings)
+			}
 
 			_, err := testBuilder.WaitForCondition(defaultLocationCondition, time.Second)
-			assert.Equal(t, testCase.expectedError, err)
+			require.True(t, testCase.assertError(err), "unexpected error: %v", err)
 		})
 	}
 }
 
+// buildDummyLocation returns a Location with the provided name and namespace.
 func buildDummyLocation(name, nsname string) *inventoryv1alpha1.Location {
 	return &inventoryv1alpha1.Location{
 		ObjectMeta: metav1.ObjectMeta{
@@ -375,16 +439,19 @@ func buildDummyLocation(name, nsname string) *inventoryv1alpha1.Location {
 	}
 }
 
+// newLocationTestClient returns a test client with the inventory scheme attached.
 func newLocationTestClient() *clients.Settings {
 	return clients.GetTestClients(clients.TestClientParams{
 		SchemeAttachers: inventoryTestSchemes,
 	})
 }
 
+// newValidLocationBuilder returns a valid LocationBuilder with default test name and namespace.
 func newValidLocationBuilder(apiClient *clients.Settings) *LocationBuilder {
 	return NewLocationBuilder(apiClient, testLocationName, testLocationNamespace)
 }
 
+// newInvalidLocationBuilder returns a LocationBuilder with an empty name for validation testing.
 func newInvalidLocationBuilder(apiClient *clients.Settings) *LocationBuilder {
 	return NewLocationBuilder(apiClient, "", testLocationNamespace)
 }
