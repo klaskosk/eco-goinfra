@@ -2,6 +2,7 @@ package bmh
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -9,9 +10,11 @@ import (
 	bmhv1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	goclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func TestBareMetalHostList(t *testing.T) {
@@ -207,14 +210,17 @@ func TestBareMetalWaitForAllBareMetalHostsInGoodOperationalState(t *testing.T) {
 	}
 }
 
+//nolint:funlen
 func TestListInventoryEligibleBMH(t *testing.T) {
 	testCases := []struct {
-		name           string
-		bareMetalHosts []runtime.Object
-		listOptions    []goclient.ListOptions
-		client         bool
-		expectedError  error
-		expectedNames  []string
+		name             string
+		bareMetalHosts   []runtime.Object
+		listOptions      []goclient.ListOptions
+		client           bool
+		interceptorFuncs interceptor.Funcs
+		expectedError    error
+		assertError      func(error) bool
+		expectedNames    []string
 	}{
 		{
 			name: "returns only inventory-eligible baremetalhosts",
@@ -257,6 +263,26 @@ func TestListInventoryEligibleBMH(t *testing.T) {
 			expectedError: fmt.Errorf("failed to list bareMetalHosts, 'apiClient' parameter is empty"),
 			client:        false,
 		},
+		{
+			name: "propagates list errors",
+			bareMetalHosts: []runtime.Object{
+				buildInventoryEligibleBMH("eligible-bmh", defaultBmHostNsName, bmhv1alpha1.StateProvisioned),
+			},
+			client: true,
+			interceptorFuncs: interceptor.Funcs{
+				List: func(
+					_ context.Context,
+					_ goclient.WithWatch,
+					_ goclient.ObjectList,
+					_ ...goclient.ListOption,
+				) error {
+					return errors.New("simulated list failure")
+				},
+			},
+			assertError: func(err error) bool {
+				return err != nil && err.Error() == "simulated list failure"
+			},
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -265,12 +291,19 @@ func TestListInventoryEligibleBMH(t *testing.T) {
 
 			if testCase.client {
 				testSettings = clients.GetTestClients(clients.TestClientParams{
-					K8sMockObjects:  testCase.bareMetalHosts,
-					SchemeAttachers: testSchemes,
+					K8sMockObjects:   testCase.bareMetalHosts,
+					SchemeAttachers:  testSchemes,
+					InterceptorFuncs: testCase.interceptorFuncs,
 				})
 			}
 
 			bmhBuilders, err := ListInventoryEligibleBMH(testSettings, testCase.listOptions...)
+			if testCase.assertError != nil {
+				require.True(t, testCase.assertError(err), "unexpected error: %v", err)
+
+				return
+			}
+
 			assert.Equal(t, testCase.expectedError, err)
 
 			if testCase.expectedError != nil {
@@ -322,10 +355,10 @@ func TestIsInventoryEligibleBMH(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "resource pool name with ineligible state",
-			bmh: buildInventoryEligibleBMHWithLabels("ineligible-bmh", defaultBmHostNsName,
-				bmhv1alpha1.StateInspecting, map[string]string{
-					labelResourcePoolName: "pool123",
+			name: "empty resource pool name without selector labels",
+			bmh: buildInventoryEligibleBMHWithLabels("empty-pool-bmh", defaultBmHostNsName,
+				bmhv1alpha1.StateProvisioned, map[string]string{
+					labelResourcePoolName: "",
 				}),
 			expected: false,
 		},
@@ -342,6 +375,43 @@ func TestIsInventoryEligibleBMH(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			assert.Equal(t, testCase.expected, IsInventoryEligibleBMH(testCase.bmh))
+		})
+	}
+}
+
+func TestIsInventoryEligibleBMHProvisioningStates(t *testing.T) {
+	rejectedStates := []bmhv1alpha1.ProvisioningState{
+		bmhv1alpha1.StateNone,
+		bmhv1alpha1.StateUnmanaged,
+		bmhv1alpha1.StateRegistering,
+		bmhv1alpha1.StateMatchProfile,
+		bmhv1alpha1.StateReady,
+		bmhv1alpha1.StateInspecting,
+		bmhv1alpha1.StatePoweringOffBeforeDelete,
+		bmhv1alpha1.StateDeleting,
+	}
+
+	for _, state := range rejectedStates {
+		t.Run(fmt.Sprintf("rejects %s provisioning state", state), func(t *testing.T) {
+			bmh := buildInventoryEligibleBMHWithLabels("state-bmh", defaultBmHostNsName, state, map[string]string{
+				labelResourcePoolName: "pool123",
+			})
+			assert.False(t, IsInventoryEligibleBMH(bmh))
+		})
+	}
+
+	eligibleStates := []bmhv1alpha1.ProvisioningState{
+		bmhv1alpha1.StateProvisioning,
+		bmhv1alpha1.StateExternallyProvisioned,
+		bmhv1alpha1.StatePreparing,
+	}
+
+	for _, state := range eligibleStates {
+		t.Run(fmt.Sprintf("accepts %s provisioning state", state), func(t *testing.T) {
+			bmh := buildInventoryEligibleBMHWithLabels("state-bmh", defaultBmHostNsName, state, map[string]string{
+				labelResourcePoolName: "pool123",
+			})
+			assert.True(t, IsInventoryEligibleBMH(bmh))
 		})
 	}
 }
