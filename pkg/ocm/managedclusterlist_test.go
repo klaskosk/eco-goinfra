@@ -118,6 +118,12 @@ func TestListNodeClusterEligibleManagedClusters(t *testing.T) {
 			assert.ElementsMatch(t, testCase.expectedNames, names)
 		})
 	}
+
+	t.Run("returns error when apiClient is nil", func(t *testing.T) {
+		builders, err := ListNodeClusterEligibleManagedClusters(nil)
+		assert.EqualError(t, err, "failed to list managedClusters, 'apiClient' parameter is nil")
+		assert.Nil(t, builders)
+	})
 }
 
 func TestListDeploymentManagerEligibleManagedClusters(t *testing.T) {
@@ -176,6 +182,12 @@ func TestListDeploymentManagerEligibleManagedClusters(t *testing.T) {
 			assert.ElementsMatch(t, testCase.expectedNames, names)
 		})
 	}
+
+	t.Run("returns error when apiClient is nil", func(t *testing.T) {
+		builders, err := ListDeploymentManagerEligibleManagedClusters(nil)
+		assert.EqualError(t, err, "failed to list managedClusters, 'apiClient' parameter is nil")
+		assert.Nil(t, builders)
+	})
 }
 
 //nolint:funlen // table-driven test with multiple eligibility scenarios.
@@ -188,6 +200,11 @@ func TestIsNodeClusterEligibleManagedCluster(t *testing.T) {
 		cluster  *clusterv1.ManagedCluster
 		eligible bool
 	}{
+		{
+			name:     "nil cluster",
+			cluster:  nil,
+			eligible: false,
+		},
 		{
 			name:     "eligible spoke cluster",
 			cluster:  buildNodeClusterEligibleSpokeManagedCluster(testSpokeClusterName, clusterID, templateID),
@@ -309,6 +326,11 @@ func TestIsDeploymentManagerEligibleManagedCluster(t *testing.T) {
 		cluster  *clusterv1.ManagedCluster
 		eligible bool
 	}{
+		{
+			name:     "nil cluster",
+			cluster:  nil,
+			eligible: false,
+		},
 		{
 			name:     "eligible spoke cluster",
 			cluster:  buildDeploymentManagerEligibleSpokeManagedCluster(testSpokeClusterName, clusterID, templateID),
