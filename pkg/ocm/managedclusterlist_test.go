@@ -255,6 +255,16 @@ func TestIsNodeClusterEligibleManagedCluster(t *testing.T) {
 			eligible: false,
 		},
 		{
+			name: "nil labels",
+			cluster: func() *clusterv1.ManagedCluster {
+				cluster := buildNodeClusterEligibleSpokeManagedCluster(testSpokeClusterName, clusterID, templateID)
+				cluster.Labels = nil
+
+				return cluster
+			}(),
+			eligible: false,
+		},
+		{
 			name: "available condition false",
 			cluster: func() *clusterv1.ManagedCluster {
 				cluster := buildNodeClusterEligibleSpokeManagedCluster(testSpokeClusterName, clusterID, templateID)
@@ -415,6 +425,16 @@ func TestIsDeploymentManagerEligibleManagedCluster(t *testing.T) {
 			cluster: func() *clusterv1.ManagedCluster {
 				cluster := buildDeploymentManagerEligibleSpokeManagedCluster(testSpokeClusterName, clusterID, templateID)
 				delete(cluster.Labels, clusterIDLabel)
+
+				return cluster
+			}(),
+			eligible: false,
+		},
+		{
+			name: "nil labels",
+			cluster: func() *clusterv1.ManagedCluster {
+				cluster := buildDeploymentManagerEligibleSpokeManagedCluster(testSpokeClusterName, clusterID, templateID)
+				cluster.Labels = nil
 
 				return cluster
 			}(),
